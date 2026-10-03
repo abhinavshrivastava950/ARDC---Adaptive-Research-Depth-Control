@@ -1,33 +1,62 @@
-# ARDC — Adaptive Research Depth Control: the Contract-Gated Lease Controller (Worker, v1)
+![ARDC banner](demo/banner.png)
 
-> **Status.** Working implementation of the frozen architecture baseline
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="python 3.10+">
+  <img src="https://img.shields.io/badge/tests-18_passing-brightgreen" alt="18 tests passing">
+  <img src="https://img.shields.io/badge/architecture-frozen-orange" alt="architecture frozen">
+  <img src="https://img.shields.io/badge/thresholds-tunable-yellow" alt="thresholds tunable">
+  <img src="https://img.shields.io/badge/demo-live-orange" alt="live demo, no backend">
+  <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license">
+</p>
+
+<h1 align="center">ARDC — Adaptive Research Depth Control</h1>
+<p align="center"><b>The Contract-Gated Lease Controller (Worker, v1)</b><br>
+An external control layer that stops document agents from quitting early,
+rambling on, or digging in the wrong direction.</p>
+
+<p align="center">
+  <a href="#demo">Live demo</a> ·
+  <a href="ARCHITECTURE.md">Architecture</a> ·
+  <a href="PARAMETERS.md">Parameters</a> ·
+  <a href="ROADMAP.md">Roadmap</a>
+</p>
+
+> **Status.** Working implementation of the frozen baseline
 > (*Adaptive_Research_Depth_Final_Architecture_Corrected.docx*, 27 Aug 2026).
-> The architecture — contract / trace / checkpoint semantics / effort ranking /
-> work leases / finalization authorization — is fixed. All thresholds, weights and
+> Architecture — contract / trace / checkpoint semantics / effort ranking / work
+> leases / finalization authorization — is fixed. Thresholds, weights and
 > coefficients are tunable configuration with literature-backed defaults.
 
-## Abstract
+## Contents
 
-Document-grounded assistants exhibit *effort miscalibration*: they stop before required
-evidence is gathered, continue after useful progress has ended, or spend effort along an
-unproductive direction. This repository implements the **Contract-Gated Lease Controller
-(CGLC)**, an external control layer around an already-capable document worker. The
-controller maintains a stable task contract, observes a cheap append-only trace, grants
-**bounded work leases** (one coarse intent, 1–5 actions), interprets semantics only at
-event-driven checkpoints, and authorizes completion exclusively through a **conjunctive
-finalization gate**. Hard obligations, semantic sufficiency, and effort estimates are
-never collapsed into a single score.
+- [Demo](#demo) · [Problem](#1-problem) · [Method](#2-method) ·
+  [Parameters](#3-parameters) · [Repository map](#4-repository-map) ·
+  [Reproduction](#5-reproduction) · [Evaluation](#6-evaluation-and-falsification) ·
+  [Scope](#7-scope-and-limitations) · [Sources](#8-primary-sources) · [License](#license)
+
+## Demo
 
 ![CGLC guided tour: stall detection, denied premature finish, and authorized full run](demo/demo-tour.gif)
 
 *Figure 1 — Guided tour of the live demo (`demo/index.html`): repeated queries trigger the
 structural-stall checkpoint; a fluent but unsupported draft is denied finalization; a full
-run terminates in `ALLOW_FINALIZE` with a complete audit record. Recorded in Chromium;
-full-quality video: [`demo/demo-tour.mp4`](demo/demo-tour.mp4).*
+run terminates in `ALLOW_FINALIZE` with a complete audit record. Recorded in Chromium
+(19 s, 1.3 MB); full-quality video: [`demo/demo-tour.mp4`](demo/demo-tour.mp4).*
+
+Run it yourself — no backend, the full controller executes in the page:
+
+- **Interactive explainer + console:** open `demo/index.html` (beginner-friendly:
+  problem → idea → 5 steps → live console → parameters → falsification), press
+  **Guided tour**, drag the sliders to change policy behavior.
+- **Terminal version:** `python examples/demo_run.py` (stall trace, gate block, full
+  audit trail).
+- **Hosted:** `docs/index.html` is Pages-ready (repo Settings → Pages → `main`/`docs`).
+
+![CGLC console after a guided tour: run log, lease timeline, audit record](demo/screenshot.png)
 
 ## 1. Problem
 
-Adaptive Research Depth addresses three failure modes of document-grounded work:
+Adaptive Research Depth addresses *effort miscalibration* in document-grounded work:
 
 | # | Failure mode | Observable consequence |
 |---|--------------|------------------------|
@@ -54,6 +83,8 @@ receipt-cited judgment, and applies the deterministic decision order of §14.6:
 4. Otherwise rank feasible non-terminal actions by value-per-cost and issue the next lease;
    on non-positive utility fall back to `VERIFY` → `REDIRECT` → shortest safe lease.
 
+![CGLC runtime loop: contract, worker, guards, checkpoint, policy, and terminal outcomes](docs/architecture.svg)
+
 **Normative equations (§14).** Retrieval novelty `UPR_t = |C_t ∖ H_{t−1}| / max(1, |C_t|)`;
 action similarity `J_t` as windowed Jaccard maxima; `Stagnated_t` over `p` consecutive
 rounds — a lease-ending inspection trigger, never a completion signal. Budget pressure
@@ -69,7 +100,7 @@ ALLOW_t = C_terminal ∧ C_process ∧ C_evidence ∧ C_answer ∧ ¬C_blocker
 Exhaustion without a passing gate yields `REPORT_BLOCKED` (a transparent partial report),
 never a labeled success. Every checkpoint emits a compact audit record (contract/lease
 versions, trigger, receipt IDs, gate snapshot, selected and rejected decisions, remaining
-budget, controller cost).
+budget, controller cost). Full design rationale: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## 3. Parameters
 
@@ -108,14 +139,12 @@ src/cglc/
   audit.py         decision records (§7.5)
   worker/          DocumentWorker interface, FixedCorpusWorker, WorkerAdapter
   evaluate/        Table-16 metrics + §11.1 ablation ladder
-demo/index.html    beginner explainer + live in-browser demo (no backend)
-docs/index.html    Pages-ready copy of the demo
+demo/              banner, explainer + live demo, GIF, MP4, screenshots
+docs/              Pages-ready demo copy + architecture figure
 configs/           default.yaml (runnable literature defaults)
 examples/          quickstart.py, comparison_task.json, demo_run.py
 tests/             18 unit/integration tests
 ```
-
-Design rationale and paper-by-paper accounting: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## 5. Reproduction
 
@@ -126,8 +155,6 @@ python examples/quickstart.py    # minimal controlled comparison run
 python examples/demo_run.py      # narrated terminal demo: stall, gate block, full run w/ audit
 ```
 
-Interactive demo: open `demo/index.html` (or serve with `python -m http.server`), press
-**Guided tour**, and adjust `τ_J, τ_U, p, λ_b` and lease caps to observe policy changes.
 To substitute a real checkpoint judge, implement `JudgeFn(contract, ledger, draft)` per
 `runner.py` (structured, low-variance call citing receipt IDs; keep the
 `LOW/MEDIUM/HIGH → 0/0.5/1` mapping fixed before evaluation).
@@ -140,7 +167,7 @@ as overhead upper bound). Dimensions (Table 16): outcome quality, process compli
 grounding, behavior, user time, system cost, controller errors, calibration. The project
 fails if a prompt/fixed budget matches it, overhead consumes savings, premature answers
 rise, redirects never beat same-direction budget, gains vanish off-distribution, or the
-ledger duplicates worker effort.
+ledger duplicates worker effort. What to build next, in order: [`ROADMAP.md`](ROADMAP.md).
 
 ## 7. Scope and limitations
 
@@ -161,3 +188,7 @@ trigger) · Inference-Time Budget Control (feasible ranking, value-per-cost) · 
 vs proposal) · BATS (budget tracking, continue/pivot) · S2G-RAG (upper-bound judge) ·
 RaM (value-of-computation objective). Paper-specific figures cited are author-reported;
 the synthesis remains a hypothesis pending the evaluation above.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

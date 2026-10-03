@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="380" viewBox="0 0 900 380" font-family="Georgia, 'Times New Roman', serif">
+  <rect x="0" y="0" width="900" height="380" fill="#FBFAF7"/>
+  <text x="24" y="32" font-family="ui-monospace, Menlo, monospace" font-size="12" letter-spacing="2" fill="#A63A0B">FIGURE 2 · CGLC RUNTIME LOOP</text>
+
+  <!-- boxes -->
+  <g font-size="15">
+    <rect x="24" y="60" width="150" height="86" rx="3" fill="#FFFFFF" stroke="#141310" stroke-width="1.5"/>
+    <rect x="24" y="60" width="5" height="86" fill="#D9480F"/>
+    <text x="42" y="88" font-weight="bold">Contract K</text>
+    <text x="42" y="110" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">goal · duties</text>
+    <text x="42" y="128" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">evidence · gates</text>
+
+    <rect x="200" y="60" width="150" height="86" rx="3" fill="#FFFFFF" stroke="#141310" stroke-width="1.5"/>
+    <text x="218" y="88" font-weight="bold">Worker</text>
+    <text x="218" y="110" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">acts in lease ℓ</text>
+    <text x="218" y="128" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">trace τ logged</text>
+
+    <rect x="376" y="60" width="150" height="86" rx="3" fill="#FFFFFF" stroke="#141310" stroke-width="1.5"/>
+    <rect x="376" y="60" width="5" height="86" fill="#D9480F"/>
+    <text x="394" y="88" font-weight="bold">Guards</text>
+    <text x="394" y="110" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">budget · stall</text>
+    <text x="394" y="128" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">J / UPR · tiers</text>
+
+    <rect x="552" y="60" width="150" height="86" rx="3" fill="#FFFFFF" stroke="#141310" stroke-width="1.5"/>
+    <text x="570" y="88" font-weight="bold">Checkpoint</text>
+    <text x="570" y="110" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">packet S_t</text>
+    <text x="570" y="128" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">events only</text>
+
+    <rect x="728" y="60" width="148" height="86" rx="3" fill="#141310"/>
+    <text x="746" y="88" font-weight="bold" fill="#FBFAF7">Policy</text>
+    <text x="746" y="110" font-size="12" fill="#F5B453" font-family="ui-monospace, Menlo, monospace">gate → rank</text>
+    <text x="746" y="128" font-size="12" fill="#F5B453" font-family="ui-monospace, Menlo, monospace">→ next lease</text>
+  </g>
+
+  <!-- arrows -->
+  <g stroke="#141310" stroke-width="1.5" fill="none" marker-end="url(#ah)">
+    <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#141310" stroke-width="1.5"/></marker></defs>
+    <line x1="174" y1="103" x2="196" y2="103"/>
+    <line x1="350" y1="103" x2="372" y2="103"/>
+    <line x1="526" y1="103" x2="548" y2="103"/>
+    <line x1="702" y1="103" x2="724" y2="103"/>
+  </g>
+  <text x="24" y="168" font-size="12" fill="#6B675E" font-family="ui-monospace, Menlo, monospace">stable task policy · changes only on clarification</text>
+
+  <!-- terminal outcomes -->
+  <text x="24" y="208" font-family="ui-monospace, Menlo, monospace" font-size="12" letter-spacing="2" fill="#A63A0B">TERMINAL OUTCOMES · BY CONDITION, NEVER BY SCORE</text>
+  <g font-size="14" font-family="ui-monospace, Menlo, monospace">
+    <rect x="24" y="222" width="270" height="56" rx="28" fill="#E9F6EC" stroke="#1E7A3C" stroke-width="1.5"/>
+    <text x="48" y="257" fill="#1E7A3C" font-weight="bold">ALLOW_FINALIZE · gate passes</text>
+    <rect x="310" y="222" width="270" height="56" rx="28" fill="#FBE9DC" stroke="#A63A0B" stroke-width="1.5"/>
+    <text x="334" y="257" fill="#A63A0B" font-weight="bold">ASK_USER · needs human input</text>
+    <rect x="596" y="222" width="280" height="56" rx="28" fill="#FFFFFF" stroke="#141310" stroke-width="1.5"/>
+    <text x="620" y="257" fill="#141310" font-weight="bold">REPORT_BLOCKED · infeasible</text>
+  </g>
+
+  <!-- ownership -->
+  <line x1="24" y1="308" x2="876" y2="308" stroke="#141310" stroke-width="1"/>
+  <text x="24" y="332" font-size="14"><tspan font-weight="bold">Worker owns</tspan><tspan fill="#6B675E"> exact queries, tools, drafts, recovery detail</tspan></text>
+  <text x="24" y="356" font-size="14"><tspan font-weight="bold">Controller owns</tspan><tspan fill="#6B675E"> permission, coarse intent, finalization, audit record</tspan></text>
+</svg>
