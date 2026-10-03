@@ -148,8 +148,8 @@ src/cglc/
   evaluate/        Table-16 metrics + §11.1 ablation list
   bench/           benchmark harness: dataset adapters, contract regimes, the 9 arms, report
 demo/              site: explainer, "Try it" (try.js/try.css), simulator, GIF, MP4
-api/               Vercel Python functions (run, models, health)
-vercel.json        static site from demo/ + 60 s functions
+app.py             Vercel entrypoint (Flask API); public/ is the deployed site
+vercel.json        60 s function limit + headers
 docs/              Pages-ready demo copy + architecture figure
 configs/           default.yaml (runnable literature defaults)
 examples/          quickstart.py (offline), llm_quickstart.py (real LLM), comparison_task.json, demo_run.py
@@ -209,9 +209,14 @@ every model; the reply is schema-validated with one repair retry, and anything i
 
 ### Deploy (Vercel)
 
-`vercel.json` serves `demo/` as the static site and `api/*.py` as 60-second Python functions that
-import `src/cglc`. Keys are sent per request over HTTPS, used for that run only, never stored or
-logged; hosted runs are capped (depth presets, 50 s time limit, 600k characters).
+`app.py` is a small Flask app (the API: `/api/run`, `/api/models`, `/api/health`); the demo site is
+served from `public/` by Vercel's CDN. Import the repo in Vercel (framework is auto-detected as Flask,
+no build command), or run `vercel deploy`. `vercel.json` sets a 60 s function limit. Keys are sent per
+request over HTTPS, used for that run only, never stored or logged; hosted runs are capped (depth
+presets, 50 s time limit, 600k characters).
+
+`demo/` is the canonical copy of the site. After editing it run `python scripts/sync_site.py` to refresh
+`docs/` (GitHub Pages) and `public/` (Vercel); a test fails if they drift.
 
 ### Benchmark harness (no results yet)
 

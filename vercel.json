@@ -1,9 +1,8 @@
 {
-  "outputDirectory": "demo",
   "functions": {
-    "api/*.py": {
+    "app.py": {
       "maxDuration": 60,
-      "excludeFiles": "{data/**,results/**,demo/**,docs/**,tests/**,examples/**,**/__pycache__/**}"
+      "excludeFiles": "{data/**,results/**,demo/**,docs/**,tests/**,examples/**,scripts/**,**/__pycache__/**}"
     }
   },
   "headers": [

@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CGLC — an AI research assistant that knows when to stop</title>
+<style>
+  :root{
+    --paper:#FBFAF7; --ink:#141310; --muted:#6B675E;
+    --accent:#D9480F; --accent-soft:#FBE9DC; --accent-ink:#A63A0B;
+    --line:#E4E0D5; --card:#FFFFFF; --term:#131210;
+    --serif:Georgia,"Charter","Bitstream Charter","Sitka Text",Cambria,"Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  code,.mono{font-family:var(--mono);font-size:.85em;background:#F1EEE5;
+    border:1px solid var(--line);border-radius:4px;padding:1px 6px;white-space:nowrap}
+  .dim{color:var(--muted)}
+
+  /* masthead */
+  .masthead{border-bottom:3px solid var(--ink)}
+  .masthead .rule-accent{height:4px;background:var(--accent)}
+  header.hero{max-width:860px;margin:0 auto;padding:64px 24px 44px;text-align:left}
+  .badge{display:inline-block;font-family:var(--mono);font-size:12px;letter-spacing:.12em;
+    color:var(--accent-ink);border:1px solid var(--accent);border-radius:3px;
+    padding:5px 12px;background:var(--accent-soft);text-transform:uppercase}
+  header.hero h1{font-family:var(--serif);font-weight:700;font-size:clamp(34px,5.6vw,60px);
+    line-height:1.08;letter-spacing:-.01em;margin:20px 0 16px}
+  header.hero h1 em{font-style:italic;color:var(--accent-ink)}
+  header.hero p.sub{font-size:clamp(16px,2vw,19px);color:#3d3a33;max-width:700px;margin:0}
+  .stats{display:flex;gap:0;margin-top:28px;border:1px solid var(--ink);border-radius:2px;overflow:hidden;flex-wrap:wrap}
+  .stat{flex:1 1 160px;padding:14px 20px;background:var(--card);border-right:1px solid var(--ink)}
+  .stat:last-child{border-right:none}
+  .stat b{display:block;font-family:var(--serif);font-size:30px;color:var(--accent-ink)}
+  .stat span{font-size:12.5px;color:var(--muted)}
+  .cta-row{margin-top:26px;display:flex;gap:10px;flex-wrap:wrap}
+
+  nav{position:sticky;top:0;z-index:20;display:flex;justify-content:center;flex-wrap:wrap;gap:2px;
+    padding:9px 14px;background:rgba(251,250,247,.94);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);font-size:13.5px}
+  nav a{color:var(--muted);text-decoration:none;padding:6px 13px;border-radius:3px}
+  nav a:hover{color:var(--ink);background:#F1EEE5}
+
+  section{padding:48px 24px;max-width:860px;margin:0 auto;border-bottom:1px solid var(--line)}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--accent-ink);
+    text-transform:uppercase}
+  section h2{font-family:var(--serif);font-size:clamp(24px,3.4vw,34px);margin:8px 0 12px;letter-spacing:-.01em}
+  section>p.lead{color:#3d3a33;font-size:17px;max-width:720px}
+  section a{color:var(--accent-ink)}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:20px 0 4px}
+  .card{background:var(--card);border:1px solid var(--ink);border-radius:3px;padding:18px;position:relative}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent)}
+  .card h3{font-family:var(--serif);margin:0 0 6px;font-size:17px}
+  .card p{margin:0;font-size:14px;color:var(--muted)}
+  .card p b{color:var(--ink)}
+
+  ol.steps{list-style:none;margin:20px 0 4px;padding:0;counter-reset:st}
+  ol.steps li{counter-increment:st;position:relative;margin:0 0 10px;padding:14px 16px 14px 58px;
+    background:var(--card);border:1px solid var(--line);border-radius:3px}
+  ol.steps li::before{content:counter(st,decimal-leading-zero);position:absolute;left:14px;top:15px;
+    font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent-ink)}
+  ol.steps li b{color:var(--ink)}
+  .note{background:var(--accent-soft);border:1px solid var(--accent);border-radius:3px;
+    padding:13px 17px;margin:16px 0;font-size:14.5px;color:#4a2c14}
+
+  table.params{border-collapse:collapse;width:100%;font-size:13.5px;margin:16px 0;background:var(--card)}
+  table.params th,table.params td{border:1px solid var(--ink);padding:9px 12px;text-align:left;vertical-align:top}
+  table.params th{background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:11.5px;
+    letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+  table.params td.mono{white-space:normal}
+
+  /* figure / demo console */
+  figure.console{margin:22px 0 4px;border:1px solid var(--ink);border-radius:3px;
+    background:var(--card);overflow:hidden}
+  figcaption{font-family:var(--mono);font-size:12px;color:var(--muted);padding:10px 16px;
+    border-bottom:1px solid var(--ink);background:#F4F1E8;letter-spacing:.04em}
+  figcaption b{color:var(--accent-ink)}
+  .demo-grid{display:grid;grid-template-columns:290px 1fr}
+  aside{border-right:1px solid var(--ink);padding:18px;background:#F9F7F1}
+  aside h3,.maincol h3{font-family:var(--mono);font-size:11px;text-transform:uppercase;
+    letter-spacing:.14em;color:var(--muted);margin:4px 0 8px}
+  .param{margin:11px 0;font-size:13px}
+  .param label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-bottom:5px}
+  .param label b{color:var(--ink);font-family:var(--mono)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;outline:none;
+    background:linear-gradient(90deg,var(--accent) var(--p,50%),#D8D3C2 var(--p,50%))}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--card);border:2.5px solid var(--accent);cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;
+    background:var(--card);border:2.5px solid var(--accent);cursor:pointer}
+  .param input[type=number]{width:60px;background:var(--card);color:var(--ink);
+    border:1px solid var(--ink);border-radius:3px;padding:4px 7px;font:inherit;font-family:var(--mono);font-size:12.5px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:11px 0}
+  button{background:var(--card);color:var(--ink);border:1px solid var(--ink);
+    padding:8px 14px;cursor:pointer;font:inherit;font-size:13px;border-radius:3px;transition:background .15s}
+  button:hover{background:#F1EEE5}
+  button.primary{background:var(--ink);color:var(--paper);font-weight:600}
+  button.primary:hover{background:#2b2925}
+  button.tour{background:var(--accent);border-color:var(--accent-ink);color:#fff;font-weight:700}
+  button.tour:hover{background:var(--accent-ink)}
+  .maincol{padding:18px;min-width:0}
+  #log{background:var(--term);color:#EDE8DB;border-radius:3px;padding:15px 16px;
+    min-height:250px;max-height:46vh;overflow:auto;white-space:pre-wrap;
+    font-family:var(--mono);font-size:12.5px;line-height:1.7}
+  #log .dim{color:#8f8875}
+  .ok{color:#7BD88F;font-weight:700}.warn{color:#F0A92E;font-weight:700}.bad{color:#FF7A6B;font-weight:700}
+  .acc{color:#F5B453;font-weight:700}.say{color:#E8C98F}
+  #timeline{display:flex;gap:7px;margin:12px 0;flex-wrap:wrap}
+  .chip{border:1px solid var(--ink);border-radius:999px;padding:4px 12px;font-size:11.5px;
+    background:var(--card);font-family:var(--mono)}
+  .chip.ok{border-color:#1E7A3C;color:#1E7A3C;background:#E9F6EC}
+  .chip.warn{border-color:var(--accent-ink);color:var(--accent-ink);background:var(--accent-soft)}
+  .chip.bad{border-color:#B3231B;color:#B3231B;background:#FBE7E5}
+  #audit{background:#F4F1E8;border:1px solid var(--line);border-radius:3px;padding:14px 16px;
+    max-height:28vh;overflow:auto;white-space:pre;font-size:11.5px;font-family:var(--mono);color:#3d3a33}
+
+  footer{padding:24px;text-align:center;color:var(--muted);font-size:12.5px}
+  footer a{color:var(--accent-ink)}
+
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .5s ease,transform .5s ease}
+  .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}html{scroll-behavior:auto}}
+  @media (max-width:880px){
+    .demo-grid{grid-template-columns:1fr}
+    aside{border-right:none;border-bottom:1px solid var(--ink)}
+    header.hero{padding:48px 20px 34px}
+    .stat{border-right:none;border-bottom:1px solid var(--ink)}
+    .stat:last-child{border-bottom:none}
+  }
+</style>
+<link rel="stylesheet" href="try.css">
+</head>
+<body>
+
+<div class="masthead"><div class="rule-accent"></div></div>
+<header class="hero">
+  <span class="badge">Adaptive Research Depth · CGLC v1 · Working paper + live demo</span>
+  <h1>An AI research assistant that <em>knows when to stop.</em></h1>
+  <p class="sub">The <b>Contract-Gated Lease Controller</b> corrects <b>effort miscalibration</b> in
+  document-grounded assistants: quitting before the evidence is read, continuing after useful progress ends,
+  or spending effort in an unproductive direction. Read the argument — then run it live below.</p>
+  <div class="stats">
+    <div class="stat"><b>−39%</b><span>tokens, accuracy up · CGDP gate</span></div>
+    <div class="stat"><b>−27%</b><span>wall-clock, higher F1 · budget control</span></div>
+    <div class="stat"><b>3 ≠ 1</b><span>done, stuck &amp; blocked kept separate</span></div>
+  </div>
+  <div class="cta-row">
+    <a href="#try" style="text-decoration:none"><button class="tour">Try it on your own document</button></a>
+    <a href="#demo" style="text-decoration:none"><button>Watch the 2-minute tour</button></a>
+    <a href="#how" style="text-decoration:none"><button>Read how it works</button></a>
+  </div>
+</header>
+
+<nav>
+  <a href="#problem">1 · Problem</a><a href="#idea">2 · Idea</a><a href="#how">3 · Method</a><a href="#try">4 · Try it</a><a href="#demo">5 · Simulator</a><a href="#numbers">6 · Parameters</a><a href="#proof">7 · Evaluation</a>
+</nav>
+
+<section id="problem" class="reveal">
+  <span class="kicker">1 · Problem</span>
+  <h2>Capable assistants, uncalibrated effort</h2>
+  <p class="lead">Ask an AI: <i>"Compare these three system designs from the attached documents and tell me which is strongest."</i> Three failure modes recur:</p>
+  <div class="cards">
+    <div class="card"><h3>Under-execution</h3><p>The answer <b>sounds confident</b> yet never inspected the third document. Premature completion can be clean — that is what makes it dangerous.</p></div>
+    <div class="card"><h3>Unproductive continuation</h3><p>The answer was supportable after 3 retrievals; the agent performs <b>12 further searches</b> with no marginal gain — cost without progress.</p></div>
+    <div class="card"><h3>Misdirected effort</h3><p>The evidence lies in a different source family, but the agent keeps <b>re-phrasing the same failing query</b> rather than redirecting.</p></div>
+  </div>
+  <p>Existing remedies — token caps, "be thorough but concise", fixed iteration budgets — cannot distinguish <b>completion</b> from <b>local stagnation</b> from <b>blocked termination</b>. This project makes that distinction architectural.</p>
+</section>
+
+<section id="idea" class="reveal">
+  <span class="kicker">2 · Idea</span>
+  <h2>Separate permission from completion</h2>
+  <div class="cards">
+    <div class="card"><h3>The worker</h3><p>Plans and executes research: queries, reading order, drafts. Retains full autonomy <b>within</b> each grant of work.</p></div>
+    <div class="card"><h3>The controller</h3><p>Owns the task contract, grants <b>bounded leases</b> (one coarse intent, 1–5 actions), and interprets semantics <b>only at checkpoints</b> — never after every action.</p></div>
+    <div class="card"><h3>The gate</h3><p>Finalization requires a <b>conjunction</b>: draft exists ∧ process duties met ∧ evidence sufficient ∧ schema conforms ∧ no blocker. One failure denies completion.</p></div>
+  </div>
+  <div class="note"><b>Architectural rule.</b> Hard obligations constrain what is allowed · semantic sufficiency governs whether the answer is ready · stagnation and value-per-cost govern what to do next. These three functions are never collapsed into one score.</div>
+</section>
+
+<section id="how" class="reveal">
+  <span class="kicker">3 · Method</span>
+  <h2>Five steps per run</h2>
+  <ol class="steps">
+    <li><b>Compile the contract</b> <span class="mono">K = (g, H_proc, H_evid, S_soft, B_mat, A_schema, B_policy)</span>. V1 uses benchmark/user-confirmed obligations. <span class="dim">→ <code>contracts.py</code></span></li>
+    <li><b>Issue a lease</b> <span class="mono">ℓ = (intent, gaps, actions, cap, progress-test)</span>. SHORT 1 · STANDARD 3 · EXTENDED 5. <span class="dim">→ <code>leases.py</code></span></li>
+    <li><b>Log the trace.</b> Every action, observation and cost appended immutably; no semantic reconstruction. <span class="dim">→ <code>trace.py</code></span></li>
+    <li><b>Checkpoint on events</b> — finalization request, lease expiry, p-round structural stall, blocker/contradiction, budget tier, max silence. <span class="dim">→ <code>guards.py</code></span></li>
+    <li><b>Gate, then rank.</b> Conjunctive gate first; then rank feasible <span class="mono">CONTINUE / VERIFY / REDIRECT</span> by value-per-cost <span class="mono">r = max(0,u)/(d+ε)</span>. Terminal states selected by condition, never by score. <span class="dim">→ <code>controller.py</code> <code>scoring.py</code> <code>gates.py</code></span></li>
+  </ol>
+  <div class="note">Stagnation trigger (CGDP): over <span class="mono">p</span> consecutive rounds, action similarity <span class="mono">J ≥ τ<sub>J</sub></span> with retrieval novelty <span class="mono">UPR ≤ τ<sub>U</sub></span> ends the lease and forces inspection. It establishes local stall — never global exhaustion, never completion. <span class="dim">→ <code>stagnation.py</code></span></div>
+</section>
+
+<section id="try" class="reveal">
+  <span class="kicker">4 · Try it</span>
+  <h2>Run it on your own document</h2>
+  <p class="lead">Paste or upload any text, ask a question, and watch the controller decide whether the answer is <i>actually</i> ready, or send the AI back to look again. Bring your own <b>Groq</b> or <b>Claude</b> key, or use <b>Offline</b> mode (no key, no AI) just to see the mechanics.</p>
+  <div class="note" id="t-offline-note" hidden><b>Live runs need the server.</b> This copy of the page is static. Open the hosted site, or run <code>python -m cglc.web</code> locally.</div>
+
+  <div class="t-wrap">
+    <div class="t-step">
+      <h3><span class="n">STEP 1</span>Choose the AI</h3>
+      <p class="hint">The worker model reads your documents and drafts the answer; a second call at each checkpoint judges it.</p>
+      <div class="t-seg" role="radiogroup" aria-label="AI provider">
+        <label><input type="radio" name="t-prov" value="groq" checked><span>Groq<small>any model, fast, free tier</small></span></label>
+        <label><input type="radio" name="t-prov" value="anthropic"><span>Claude<small>Anthropic key</small></span></label>
+        <label><input type="radio" name="t-prov" value="offline"><span>Offline<small>no key, no AI</small></span></label>
+      </div>
+      <div class="t-row">
+        <div class="t-field" id="t-keywrap"><label for="t-key">YOUR API KEY</label>
+          <input id="t-key" type="password" autocomplete="off" spellcheck="false" placeholder="gsk_…">
+          <p class="t-note"><span id="t-keyhelp"></span> Your key goes over HTTPS with the Run request, is used only for that run, and is never stored or logged. Use a key you can revoke.</p></div>
+        <div class="t-field" id="t-modelwrap"><label for="t-model">MODEL</label>
+          <input id="t-model" type="text" list="t-models" autocomplete="off" spellcheck="false">
+          <datalist id="t-models"></datalist>
+          <p class="t-note"><span id="t-modelhint"></span> <button type="button" id="t-load-models" style="padding:2px 9px">Load my models</button></p></div>
+      </div>
+    </div>
+
+    <div class="t-step">
+      <h3><span class="n">STEP 2</span>Add your documents</h3>
+      <p class="hint">Any text: .txt, .md, .csv, .json, .html or <b>.pdf</b> (read in your browser). Up to 20 files / 600,000 characters. Large inputs switch to retrieval (RAG) automatically.</p>
+      <div class="t-drop" id="t-drop">Drop files here or <label style="color:var(--accent-ink);cursor:pointer;text-decoration:underline">browse<input id="t-file" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.log,.html,.htm,.xml,.pdf,text/*,application/pdf" style="display:none"></label></div>
+      <div class="t-field" style="margin-top:10px"><label for="t-paste">…OR PASTE TEXT</label>
+        <textarea id="t-paste" placeholder="Paste a document here, then press “Add pasted text”."></textarea></div>
+      <div class="t-row"><button type="button" id="t-add-paste">Add pasted text</button>
+        <button type="button" id="t-clear">Remove all</button>
+        <span class="dim" style="font-size:13px">Or try a sample:</span>
+        <button type="button" data-sample="policy">Company policy (2 docs)</button>
+        <button type="button" data-sample="arch">3 architecture designs</button></div>
+      <p class="t-note" id="t-doc-count"></p>
+      <ul class="t-docs" id="t-docs"></ul>
+    </div>
+
+    <div class="t-step">
+      <h3><span class="n">STEP 3</span>Ask, and say what must be proven</h3>
+      <p class="hint">The controller will not approve an answer until every requirement below has a supporting quote.</p>
+      <div class="t-field"><label for="t-goal">YOUR QUESTION OR TASK</label>
+        <textarea id="t-goal" placeholder="e.g. Compare the two proposals and tell me which one has lower risk."></textarea></div>
+      <div class="t-field" style="margin-top:10px"><label for="t-obl">REQUIREMENTS: ONE PER LINE (OPTIONAL)</label>
+        <textarea id="t-obl" style="min-height:64px" placeholder="Leave empty for the default: every claim must be backed by a quote from the documents.&#10;Or add e.g. “The risk of each proposal is quoted from its own section.”"></textarea></div>
+      <label class="t-chk"><input type="checkbox" id="t-all"> Require evidence from every document <span class="dim">(a hard rule: the run cannot be approved until each file has been used)</span></label>
+      <details class="t-adv"><summary>Advanced</summary>
+        <div class="t-row">
+          <div class="t-field"><label for="t-depth">DEPTH</label><select id="t-depth"><option value="standard" selected>Standard (up to 14 steps)</option><option value="quick">Quick (up to 8 steps)</option></select></div>
+          <div class="t-field"><label for="t-mode">HOW THE AI READS</label><select id="t-mode"><option value="auto" selected>Auto (whole document if small, else retrieval)</option><option value="full">Whole documents in the prompt</option><option value="rag">Retrieval (RAG): top passages only</option></select></div>
+        </div></details>
+    </div>
+
+    <div class="t-run"><button type="button" class="primary" id="t-run">Run the controller</button><span id="t-status" role="status" aria-live="polite"></span></div>
+    <div class="t-err" id="t-error" hidden role="alert"></div>
+  </div>
+
+  <div id="t-result" hidden aria-live="polite"></div>
+
+  <details class="t-gloss"><summary>How to read the result: plain-English glossary</summary>
+    <dl>
+      <dt>Worker</dt><dd>The AI that does the research: it searches your documents, quotes them and drafts the answer.</dd>
+      <dt>Controller</dt><dd>A separate referee. It never writes the answer; it decides how long the worker may keep going and whether the result may be called done.</dd>
+      <dt>Lease</dt><dd>A short, bounded permission to work (1 to 5 steps) on one goal. When it runs out, the controller checks in.</dd>
+      <dt>Checkpoint</dt><dd>A moment where the controller inspects the work. It happens when the worker asks to finish, a lease ends, the worker starts repeating itself, sources conflict, or the budget gets tight, not after every step.</dd>
+      <dt>Gate</dt><dd>One of five yes/no checks that must <i>all</i> pass before an answer is approved. Failing any gate means “not yet”, however confident the answer sounds.</dd>
+      <dt>Evidence / receipt</dt><dd>A verbatim quote from your documents that backs a requirement. Quotes that do not really appear in the document are thrown away.</dd>
+      <dt>Stall</dt><dd>The worker keeps searching nearly the same thing and finds no new passages. That triggers a checkpoint; it does <i>not</i> mean the answer is done.</dd>
+      <dt>Continue / Verify / Redirect</dt><dd>The controller’s options when the answer is not ready: keep going; double-check a weak or disputed claim; or change approach because the current direction stopped paying off.</dd>
+      <dt>Approved vs. stopped</dt><dd>“Approved” means every gate passed. “Stopped” means the limits were hit first, and the draft is shown clearly marked as unapproved.</dd>
+      <dt>RAG mode</dt><dd>For big inputs the AI does not read everything at once. It writes a search query, a keyword search returns the best passages, and it reads only those.</dd>
+      <dt>Offline mode</dt><dd>No AI at all: keyword search plus simple rules. It exists only to show the controller’s behavior on your text.</dd>
+    </dl>
+  </details>
+</section>
+
+<section id="demo" class="reveal">
+  <span class="kicker">5 · Simulator</span>
+  <h2>Poke the controller</h2>
+  <p class="lead">This simulator uses a fixed toy corpus so you can see every mechanism. <b>Guided tour</b> narrates three scenes — stall, denied finish, full run. Or drive manually and move the thresholds to change the controller's behavior.</p>
+  <figure class="console">
+    <figcaption><b>Figure 1.</b> CGLC console — leases, checkpoints, gates and audit, computed live in this page.</figcaption>
+    <div class="demo-grid">
+      <aside>
+        <h3>Parameters · literature defaults</h3>
+        <div class="param"><label>Action similarity τ<sub>J</sub> <b id="v-tauJ">0.60</b></label>
+          <input id="p-tauJ" type="range" min="0" max="1" step="0.05" value="0.6"></div>
+        <div class="param"><label>Novelty floor τ<sub>U</sub> <b id="v-tauU">0.30</b></label>
+          <input id="p-tauU" type="range" min="0" max="1" step="0.05" value="0.3"></div>
+        <div class="param"><label>Persistence p <b id="v-p">2</b></label>
+          <input id="p-p" type="number" min="1" max="6" value="2"></div>
+        <div class="param"><label>Budget pressure λ<sub>b</sub> <b id="v-lb">0.70</b></label>
+          <input id="p-lb" type="range" min="0" max="1.5" step="0.05" value="0.7"></div>
+        <div class="param"><label>Lease caps S / M / L</label>
+          <span class="row">
+            <input id="p-s" type="number" min="1" max="3" value="1">
+            <input id="p-m" type="number" min="1" max="6" value="3">
+            <input id="p-e" type="number" min="1" max="9" value="5">
+          </span></div>
+        <div class="row"><button id="b-reset">Reset defaults</button></div>
+        <h3>Scenarios</h3>
+        <div class="row">
+          <button class="tour" id="b-tour">Guided tour (2 min)</button>
+          <button class="primary" id="b-full">Full run</button>
+          <button id="b-stag">Stall demo</button>
+          <button id="b-gate">Gate demo</button>
+        </div>
+        <p class="dim" style="font-size:12px">Corpus: design-A / B / C. The worker ranks documents by term overlap with the open gap — a stand-in for any retrieval tool.</p>
+      </aside>
+      <div class="maincol">
+        <h3>Run log</h3>
+        <div id="log"><span class="dim">Press “Guided tour”, or any scenario button…</span></div>
+        <h3>Lease / checkpoint timeline</h3>
+        <div id="timeline"></div>
+        <h3>Audit record (§7.5)</h3>
+        <div id="audit"><span class="dim">—</span></div>
+      </div>
+    </div>
+  </figure>
+</section>
+
+<section id="numbers" class="reveal">
+  <span class="kicker">6 · Parameters</span>
+  <h2>Literature-backed defaults</h2>
+  <p class="lead">Each value is taken from the paper that reported it — a starting point, not an optimum. All are logged per run and ablated on held-out trajectories (§14.7).</p>
+  <table class="params">
+    <tr><th>Parameter</th><th>Value</th><th>Meaning</th><th>Reported result</th></tr>
+    <tr><td class="mono">τ_J, τ_U, p</td><td class="mono">0.6, 0.3, 2</td><td>Similarity / novelty bars + persistence (CGDP f<sub>j0.6_u0.3_p2</sub>)</td><td>−39% tokens; +1.1/+2.8/+6.9 acc</td></tr>
+    <tr><td class="mono">λ_b (+ω, ε)</td><td class="mono">0.7 (eq., 1e−5)</td><td>Cost-penalty scale; equal resource weights; smoothing</td><td>−27.2% wall-clock over 48 cells</td></tr>
+    <tr><td class="mono">HALT τ, ε</td><td class="mono">0.0, 0.02, ALL_MATCH</td><td>Verifier margin; non-inferiority; every hop evidenced</td><td>−20–45% redundant loops</td></tr>
+    <tr><td class="mono">θ_e, θ_ev, δ</td><td class="mono">0.85, 0.70, 0.05</td><td>Coverage targets + marginal-gain floor (ablation only)</td><td>1.000 coverage, 7.0→3.36 rounds</td></tr>
+    <tr><td class="mono">τ_len, τ_step, τ_loop</td><td class="mono">3000, 4–8, 3–5</td><td>Observation truncation; step / loop screens</td><td>GAIA 30.0%→46.7%</td></tr>
+    <tr><td class="mono">T_gen, T_select</td><td class="mono">0.7, 0.0</td><td>Diverse generation; deterministic commit</td><td>Flat accuracy — budget tracking robust</td></tr>
+    <tr><td class="mono">leases</td><td class="mono">1 / 3 / 5</td><td>SHORT verify · STANDARD continue · EXTENDED explore</td><td>Convention; all runs log exact caps</td></tr>
+  </table>
+</section>
+
+<section id="proof" class="reveal">
+  <span class="kicker">7 · Evaluation</span>
+  <h2>Falsification criteria</h2>
+  <p class="lead">The design is a hypothesis until measured. It fails if any of the following hold:</p>
+  <ul>
+    <li>A generic "be thorough" prompt or fixed budget matches CGLC on quality, obligation coverage and user time.</li>
+    <li>Controller overhead eliminates the cost saved by prevented over-execution.</li>
+    <li>Premature or unsupported finalizations increase versus baselines.</li>
+    <li>REDIRECT decisions do not improve recovery over continued same-direction budget.</li>
+  </ul>
+  <p>Comparison ladder: uncontrolled worker → fixed-shallow / fixed-deep → generic prompt → fixed checkpoints → CGLC∖stall → CGLC∖scoring → <b>full CGLC</b>.
+  <span class="dim">→ <code>src/cglc/evaluate/</code> · <code>pytest -q</code>.</span></p>
+</section>
+
+<footer>ARDC — Adaptive Research Depth Control · CGLC worker v1 · architecture frozen, thresholds tunable ·
+<a href="https://github.com/abhinavshrivastava950/ARDC---Adaptive-Research-Depth-Control">GitHub repository</a></footer>
+
+<script src="try.js" defer></script>
+<script>
+"use strict";
+/* Core equations mirror src/cglc/*.py (Sec 14 normative). Narration is plain-English. */
+const tok = s => new Set((s.toLowerCase().match(/[a-z0-9]+/g) || []));
+function jaccard(a, b) {
+  if (!a.size && !b.size) return 1.0;
+  if (!a.size || !b.size) return 0.0;
+  let inter = 0; for (const x of a) if (b.has(x)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+const upr = (cur, seen) => cur.length ? cur.filter(c => !seen.has(c)).length / cur.length : 0;
+
+const DOCS = {
+  "design-A": "Architecture A uses an always-on semantic coverage layer with selective rich inspection. It supports DEEPEN VERIFY REDIRECT but coverage state is expensive.",
+  "design-B": "Architecture B maintains a MAP-like research graph with requirements evidence links coverage and marginal gain. Direction awareness is strong but controller-heavy.",
+  "design-C": "Architecture C logs raw trace and runs semantics at finalization fixed intervals and stalls. Hard duties sit outside effort judgment. Checkpoint timing is fixed."
+};
+function rankDocs(query) {
+  const q = tok(query);
+  return Object.keys(DOCS).map(id => {
+    const d = tok(DOCS[id]); let s = 0; for (const w of q) if (d.has(w)) s++;
+    return { id, s };
+  }).sort((a, b) => b.s - a.s).map(x => x.id);
+}
+function getCfg() {
+  return {
+    tauJ: +document.getElementById("p-tauJ").value,
+    tauU: +document.getElementById("p-tauU").value,
+    p: Math.max(1, +document.getElementById("p-p").value | 0),
+    lb: +document.getElementById("p-lb").value,
+    SHORT: +document.getElementById("p-s").value | 0,
+    STANDARD: +document.getElementById("p-m").value | 0,
+    EXTENDED: +document.getElementById("p-e").value | 0
+  };
+}
+const logEl = document.getElementById("log"),
+      tlEl = document.getElementById("timeline"),
+      auEl = document.getElementById("audit");
+function reset(){ logEl.innerHTML = ""; tlEl.innerHTML = ""; auEl.innerHTML = "<span class='dim'>—</span>"; }
+function line(html){ logEl.innerHTML += html + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+function say(t){ line(`<span class="say">>> ${t}</span>`); }
+function chip(txt, cls){ tlEl.innerHTML += `<span class="chip ${cls||""}">${txt}</span>`; }
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function stagDemo(c, narrate) {
+  if (narrate) say("Scene 1: the worker repeats the same query. Watch novelty collapse.");
+  line(`<span class="acc">STALL DEMO</span> <span class="dim">tau_J=${c.tauJ} tau_U=${c.tauU} p=${c.p}</span>`);
+  const seen = new Set(); let actions = [], hist = [];
+  const queries = ["compare architecture cost","compare architecture cost",
+                   "compare architecture cost","compare architecture cost"];
+  const chunks = [["A#0","B#0","C#0"],["A#0","B#0"],["A#0"],["A#0"]];
+  queries.forEach((q, i) => {
+    const J = actions.length ? Math.max(...actions.slice(-5).map(a => jaccard(tok(q), tok(a)))) : 0;
+    const U = upr(chunks[i], seen);
+    chunks[i].forEach(x => seen.add(x)); actions.push(q); hist.push([J, U]);
+    const stag = hist.length >= c.p && hist.slice(-c.p).every(([a,b]) => a >= c.tauJ && b <= c.tauU);
+    line(` search ${i}: J=${J.toFixed(2)} (same: ${J >= c.tauJ}) · UPR=${U.toFixed(2)} (stale: ${U <= c.tauU}) → ` +
+         (stag ? `<span class="warn">STAGNATED — lease ends, checkpoint fires</span>` : `<span class="dim">lease continues</span>`));
+    chip(`search ${i} ${stag ? "STAGNATED" : "work"}`, stag ? "warn" : "");
+  });
+  if (narrate) say("Result: stagnation summons inspection. It can never authorize completion.");
+  else line(`<span class="dim">Stagnation triggers inspection — never finalization.</span>`);
+}
+
+function gateDemo(narrate) {
+  if (narrate) say("Scene 2: a fluent, confident draft — with one claim backed by nothing.");
+  line(`<span class="acc">GATE DEMO</span> <span class="dim">worker requests finalization</span>`);
+  const gates = { C_terminal:true, C_process:true, C_evidence:false, C_answer:true, C_blocker:false };
+  const allow = gates.C_terminal && gates.C_process && gates.C_evidence && gates.C_answer && !gates.C_blocker;
+  line(` gate: terminal Y · process Y · <b>evidence N</b> · answer Y · blocker n`);
+  line(allow ? `<span class="ok">ALLOW_FINALIZE</span>`
+             : `<span class="bad">FINALIZATION DENIED — evidence gate fails</span>`);
+  chip("finalize requested", "bad"); chip("VERIFY lease (1 action)", "warn");
+  if (narrate) say("Result: one unchecked box denies the finish; a verification lease is issued instead.");
+  else line(` → <span class="warn">VERIFY</span> lease issued. Confident is not complete.`);
+}
+
+function fullRun(c, narrate) {
+  if (narrate) say("Scene 3: the full loop — lease, work, checkpoint, authorized finish.");
+  line(`<span class="acc">FULL RUN</span> <span class="dim">leases ${c.SHORT}/${c.STANDARD}/${c.EXTENDED} · lambda_b=${c.lb}</span>`);
+  const seen = new Set(); let actions = [], hist = [], draft = "", ckpt = 0;
+  const gaps = ["support comparison with evidence"];
+  let support = 0;
+  let lease = { intent:"CONTINUE", cap:c.STANDARD, used:0, n:1 };
+  chip("lease L1 CONTINUE", "");
+  const audits = [];
+  let guard = 0;
+  while (ckpt < 4 && guard++ < 20) {
+    let stalled = false;
+    while (lease.used < lease.cap) {
+      const q = gaps.join(" ");
+      const ranked = rankDocs(q + " " + draft.slice(0, 80));
+      const chunks = ranked.slice(0, 3).map(id => id + "#0");
+      const J = actions.length ? Math.max(...actions.slice(-5).map(a => jaccard(tok(q), tok(a)))) : 0;
+      const U = upr(chunks, seen);
+      chunks.forEach(x => seen.add(x)); actions.push(q); hist.push([J, U]);
+      lease.used++;
+      if (ranked.some(id => /architecture|evidence|comparison/.test(DOCS[id]))) support = Math.min(1, support + 0.5);
+      draft = Object.values(DOCS).join(" ").slice(0, 900);
+      stalled = hist.length >= c.p && hist.slice(-c.p).every(([a,b]) => a >= c.tauJ && b <= c.tauU);
+      const rho = 0.15, dC = 0.05, dR = 0.08;
+      const uC = 0.5 + 0.14 * (support < 1 ? 1 : 0) - c.lb * rho * dC;
+      const uR = 0.5 + 0.14 * 0.5 - 0.10 * (stalled ? 1 : 0) - c.lb * rho * dR;
+      const rC = Math.max(0, uC) / (dC + 1e-5), rR = Math.max(0, uR) / (dR + 1e-5);
+      line(` <span class="dim">search ${actions.length} [${lease.intent}]</span> J=${J.toFixed(2)} UPR=${U.toFixed(2)} ` +
+           `support=${support.toFixed(1)} r_cont=${rC.toFixed(1)} r_redir=${rR.toFixed(1)}${stalled ? ` <span class="warn">stall</span>` : ""}`);
+      if (stalled || lease.used >= lease.cap) break;
+    }
+    ckpt++;
+    const expired = lease.used >= lease.cap;
+    const evSuff = support >= 1 && draft.length > 0;
+    const gates = { C_terminal: draft.length > 0, C_process: true, C_evidence: evSuff, C_answer: true, C_blocker: false };
+    const allow = gates.C_terminal && gates.C_process && gates.C_evidence && gates.C_answer && !gates.C_blocker;
+    const reasons = [...(expired ? ["lease_expiry"] : []), ...(stalled ? ["structural_stall"] : [])];
+    let decision;
+    if (allow) decision = "ALLOW_FINALIZE";
+    else if (support < 1 && stalled) decision = "REDIRECT";
+    else if (support < 1) decision = "CONTINUE";
+    else decision = "VERIFY";
+    chip(`ckpt${ckpt} [${reasons.join("+")||"finish?"}] → ${decision}`, allow ? "ok" : "warn");
+    line(`<span class="acc">checkpoint ${ckpt}</span> [${reasons}] ${esc(JSON.stringify(gates))} → <b>${decision}</b>`);
+    audits.push({ checkpoint: ckpt, triggers: reasons, gates, decision,
+      remaining_budget: { tool_calls: 30 - actions.length * 3 }, controller_cost: { tokens: 500 } });
+    if (decision === "ALLOW_FINALIZE") break;
+    const cap = decision === "VERIFY" || decision === "REDIRECT" ? c.SHORT : c.STANDARD;
+    lease = { intent: decision, cap, used: 0, n: ckpt + 1 };
+    chip(`lease L${ckpt + 1} ${decision}`, "");
+  }
+  auEl.textContent = JSON.stringify({ contract: "K-demo (goal + duties + evidence needs)", decisions: audits }, null, 2);
+  if (narrate) say(`Complete: ${actions.length} searches, ${ckpt} checkpoint(s), all gates passed — see audit.`);
+  else line(`<span class="ok">done</span> <span class="dim">${actions.length} searches · ${ckpt} checkpoint(s) · audit above</span>`);
+}
+
+document.getElementById("b-stag").onclick = () => { reset(); stagDemo(getCfg(), false); };
+document.getElementById("b-gate").onclick = () => { reset(); gateDemo(false); };
+document.getElementById("b-full").onclick = () => { reset(); fullRun(getCfg(), false); };
+document.getElementById("b-tour").onclick = async () => {
+  reset();
+  say("Guided tour: three scenes. Observe what the controller does in each.");
+  await sleep(900);
+  stagDemo(getCfg(), true);
+  await sleep(1600);
+  gateDemo(true);
+  await sleep(1600);
+  fullRun(getCfg(), true);
+  await sleep(600);
+  say("Summary: leases bound work, events trigger inspection, only the gate finishes. Move a slider and re-run a scene to see the policy change.");
+};
+
+document.getElementById("b-reset").onclick = () => {
+  document.getElementById("p-tauJ").value = 0.6; document.getElementById("p-tauU").value = 0.3;
+  document.getElementById("p-p").value = 2; document.getElementById("p-lb").value = 0.7;
+  document.getElementById("p-s").value = 1; document.getElementById("p-m").value = 3;
+  document.getElementById("p-e").value = 5; syncLabels();
+};
+function paintRange(id){
+  const n = document.getElementById(id);
+  const pct = 100 * (n.value - n.min) / Math.max(1e-9, (n.max - n.min));
+  n.style.setProperty("--p", pct + "%");
+}
+function syncLabels(){
+  document.getElementById("v-tauJ").textContent = (+document.getElementById("p-tauJ").value).toFixed(2);
+  document.getElementById("v-tauU").textContent = (+document.getElementById("p-tauU").value).toFixed(2);
+  document.getElementById("v-p").textContent = document.getElementById("p-p").value;
+  document.getElementById("v-lb").textContent = (+document.getElementById("p-lb").value).toFixed(2);
+  paintRange("p-tauJ"); paintRange("p-tauU"); paintRange("p-lb");
+}
+["p-tauJ","p-tauU","p-p","p-lb"].forEach(id => document.getElementById(id).oninput = syncLabels);
+syncLabels();
+
+try {
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+  }), { threshold: 0.1 });
+  document.querySelectorAll(".reveal").forEach(n => io.observe(n));
+} catch (e) {
+  try { document.querySelectorAll(".reveal").forEach(n => n.classList.add("in")); } catch (_) {}
+}
+</script>
+</body>
+</html>
