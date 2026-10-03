@@ -92,4 +92,22 @@ The claim is **not supported** on a dataset/regime if any of these holds:
 
 ## Change log
 
-(empty: no results have been produced under this protocol yet)
+**2026-10-03, first pilot (HotpotQA, seed 0, n = 10, gpt-oss-120b, `generic`).**
+The first item exposed two defects before any conclusion could be drawn:
+
+1. Groq rate limits made the judge fail closed, so controller arms were
+   "blocked" for infrastructure reasons. Fix: such rows are flagged
+   (`infra_failures`), excluded from paired comparisons and re-run on resume;
+   the Groq client now waits out the token window.
+2. The controller never told the worker *why* a checkpoint failed, so VERIFY
+   loops could not repair a wrong answer: on item `5a739d8c...` the draft
+   "Mexico, Missouri" survived eight checkpoints while the uncontrolled worker
+   answered "Santa Fe" (correct) in one step. Fix: the judge's reason is now
+   passed to the worker as a `CONTROLLER NOTE` on the next lease (the worker
+   still chooses its own queries and edits).
+
+Both changes were made after seeing that item, so the seed-0 items are
+**development data**. Reported test results must use other seeds. Controller
+rows from before the changes are discarded (kept locally as
+`results/pilot_v0_discarded.jsonl`); baseline rows are unaffected by the
+changes and were kept. No result under this protocol has been reported yet.

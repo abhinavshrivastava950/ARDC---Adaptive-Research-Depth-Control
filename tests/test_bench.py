@@ -212,3 +212,28 @@ def test_hf_hotpot_conversion_matches_original_format():
     o = hf_hotpot_to_original(hf)[0]
     assert o["supporting_facts"] == [["T1", 0], ["T2", 1]]
     assert o["context"][0] == ["T1", ["s1a.", " s1b."]] and o["_id"] == "x1"
+
+
+def test_controller_note_reaches_the_worker_prompt_after_a_failed_checkpoint(item):
+    """After VERIFY, the judge's reason is shown to the worker on the next lease."""
+    seen = []
+
+    class Spy(OracleFake):
+        def complete_json(self, system, user, schema, max_tokens=8000, temperature=None):
+            if "citations" in schema["properties"]:
+                seen.append(user)
+            return super().complete_json(system, user, schema, max_tokens, temperature)
+
+    run_item("cglc_full", item, "oracle_docs", Spy(item))
+    assert len(seen) >= 2
+    assert "CONTROLLER NOTE" not in seen[0]            # first lease: nothing to say yet
+    assert "CONTROLLER NOTE" in seen[1]                # second lease carries the judge's reason
+
+
+def test_judge_failure_text_is_not_forwarded_as_a_note():
+    from cglc.worker.llm_worker import LLMDocumentWorker
+    w = LLMDocumentWorker({"A": "x" * 20}, make_contract(load("hotpotqa", FIX / "hotpot_mini.json")[0], "generic"),
+                          OracleFake(None))
+    assert "CONTROLLER NOTE" not in w._task_block("CONTINUE", [], "")
+    w.controller_note = "cited span only mentions Santa Fe"
+    assert "Santa Fe" in w._task_block("VERIFY", [], "")

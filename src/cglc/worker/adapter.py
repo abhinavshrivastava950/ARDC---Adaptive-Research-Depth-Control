@@ -19,6 +19,14 @@ class WorkerAdapter(DocumentWorker):
         self.trace = trace
         self.tau_len = tau_len
 
+    @property
+    def controller_note(self) -> str:
+        return getattr(self.inner, "controller_note", "")
+
+    @controller_note.setter
+    def controller_note(self, value: str) -> None:
+        self.inner.controller_note = value
+
     def act(self, intent, target_gaps, allowed_classes, draft: str) -> WorkerResult:
         res = self.inner.act(intent, target_gaps, allowed_classes, draft)
         chunks: List[str] = []

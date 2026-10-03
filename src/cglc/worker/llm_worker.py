@@ -160,11 +160,14 @@ class LLMDocumentWorker(DocumentWorker):
     # -- DocumentWorker ------------------------------------------------
     def _task_block(self, intent: str, target_gaps: List[str], draft: str) -> str:
         gaps = "\n".join(f"- {self._gap_text(g)}" for g in target_gaps)
+        note = (f"\nCONTROLLER NOTE (why the last check did not pass; use it to decide what to "
+                f"re-check or change, and fix your draft if it is wrong):\n{self.controller_note}\n"
+                if self.controller_note else "")
         return (
             f"TASK GOAL: {self.contract.goal}\n"
             f"ANSWER SCHEMA: {self.contract.answer_schema or 'free-form, concise'}\n"
             f"CONTROLLER INTENT: {intent}\n"
-            f"TARGET GAPS:\n{gaps}\n\nCURRENT DRAFT:\n{draft or '(none yet)'}"
+            f"TARGET GAPS:\n{gaps}\n{note}\nCURRENT DRAFT:\n{draft or '(none yet)'}"
         )
 
     def act(self, intent: str, target_gaps: List[str],

@@ -32,6 +32,10 @@ class WorkerResult:
 
 
 class DocumentWorker(ABC):
+    # The controller's reason the last checkpoint did not pass, set by the
+    # runner before each lease. Optional for workers to use.
+    controller_note: str = ""
+
     @abstractmethod
     def act(self, intent: str, target_gaps: List[str],
             allowed_classes: List[str], draft: str) -> WorkerResult:

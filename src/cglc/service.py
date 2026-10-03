@@ -132,6 +132,14 @@ class _DeadlineWorker(DocumentWorker):
                                 detail={"cost": {"tool_calls": 0.0}})
         return self.inner.act(intent, target_gaps, allowed_classes, draft)
 
+    @property
+    def controller_note(self) -> str:
+        return getattr(self.inner, "controller_note", "")
+
+    @controller_note.setter
+    def controller_note(self, value: str) -> None:
+        self.inner.controller_note = value
+
     def __getattr__(self, k):  # evidence / docs_read of the wrapped worker
         return getattr(self.inner, k)
 

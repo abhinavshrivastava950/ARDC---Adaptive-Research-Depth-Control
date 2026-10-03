@@ -169,6 +169,9 @@ class Runner:
             blocker = ""
             contradiction = False
             lease.actions_used = 0
+            # Tell the worker why the last check did not pass (coarse target
+            # gap + reason). It still chooses its own queries and edits.
+            worker.controller_note = lease.expected_progress_test
             while lease.live and not lease.expired:
                 res = worker.act(lease.intent, lease.target_gap_ids,
                                  lease.allowed_action_classes, draft)
@@ -226,7 +229,9 @@ class Runner:
             if not ev.run:
                 # No mandatory event: extend current direction with a fresh
                 # STANDARD lease (periodic inspection stays a safety net).
+                note = lease.expected_progress_test
                 lease = self._lease(lease.intent, "STANDARD", lease.target_gap_ids)
+                lease.expected_progress_test = note
                 continue
 
             # --- checkpoint packet S_t + semantic judgment ---
@@ -309,6 +314,8 @@ class Runner:
                     [o.obligation_id for o in contract.evidence_obligations])
             ran_under = lease.lease_id
             lease = self._lease(decision, cat, gaps)
+            if j.rationale and not j.rationale.startswith("judge fail-closed"):
+                lease.expected_progress_test = j.rationale[:600]
             records.append(DecisionRecord(
                 checkpoint_id=ckpt, contract_id=contract.contract_id,
                 contract_rev=contract.revision,

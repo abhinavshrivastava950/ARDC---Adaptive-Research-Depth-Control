@@ -53,6 +53,8 @@ def _done(path: Path) -> Set[Tuple[str, str, str, str]]:
         for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 r = json.loads(line)
+                if r.get("infra_failures", 0) > 0:
+                    continue  # a model call failed (e.g. rate limit): run it again
                 keys.add((r["arm"], r["item_id"], r["regime"], r.get("model", "")))
     return keys
 
@@ -93,8 +95,10 @@ def main(argv=None) -> int:
             print("Dry run only. Add --yes to spend tokens.")
         return 0
 
-    llm = make_llm(a.provider, model=a.model)
-    judge_llm = make_llm(a.provider, model=a.judge_model) if a.judge_model else llm
+    # Long benchmark runs should wait out a rate-limit window rather than fail it.
+    patience = dict(max_wait=65.0, max_rate_retries=6) if a.provider == "groq" else {}
+    llm = make_llm(a.provider, model=a.model, **patience)
+    judge_llm = make_llm(a.provider, model=a.judge_model, **patience) if a.judge_model else llm
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     done = _done(out)
