@@ -1,0 +1,7 @@
+{
+  "goal": "Choose the stronger architecture and justify the decision",
+  "process_duties": ["Inspect all three supplied designs", "Review their diagrams"],
+  "evidence_obligations": ["Support every decisive comparison with document evidence"],
+  "answer_schema": {"fields": ["decision", "rationale", "limitations", "next_action"]},
+  "budget_policy": {"note": "Controller may spend more near finalization or contradiction"}
+}
