@@ -3,91 +3,197 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CGLC Worker — Live Demonstration</title>
+<title>CGLC — an AI research assistant that knows when to stop</title>
 <style>
   :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --txt:#e6edf3;
           --dim:#8b949e; --acc:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#f85149; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt);
-         font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:14px; }
-  header { padding:18px 22px; border-bottom:1px solid var(--line); }
-  header h1 { margin:0 0 4px; font-size:18px; }
-  header p { margin:0; color:var(--dim); font-size:13px; }
-  .wrap { display:grid; grid-template-columns:300px 1fr; gap:0; min-height:calc(100vh - 90px); }
+         font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         font-size:15px; line-height:1.6; }
+  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  header.hero { padding:40px 22px 28px; border-bottom:1px solid var(--line);
+         background:radial-gradient(800px 200px at 20% 0%, #1f6feb22, transparent); }
+  header.hero h1 { margin:0 0 8px; font-size:26px; }
+  header.hero p.sub { margin:0; color:var(--dim); font-size:16px; max-width:820px; }
+  nav { position:sticky; top:0; background:#0d1117ee; border-bottom:1px solid var(--line);
+        padding:8px 22px; font-size:13px; z-index:10; }
+  nav a { color:var(--acc); margin-right:16px; text-decoration:none; }
+  section { padding:26px 22px; max-width:1000px; }
+  section h2 { font-size:20px; margin:0 0 10px; }
+  section p, li { color:var(--txt); }
+  .dim { color:var(--dim); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin:14px 0; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:14px; background:var(--panel); }
+  .card h3 { margin:0 0 6px; font-size:15px; }
+  .card p { margin:0; font-size:14px; color:var(--dim); }
+  .card p b { color:var(--txt); }
+  ol.steps li { margin:10px 0; }
+  ol.steps li b { color:var(--acc); }
+  table.params { border-collapse:collapse; width:100%; font-size:14px; margin:12px 0; }
+  table.params th, table.params td { border:1px solid var(--line); padding:8px 10px; text-align:left; }
+  table.params th { background:var(--panel); color:var(--dim); font-weight:600; }
+  .demo-grid { display:grid; grid-template-columns:300px 1fr; gap:0; border:1px solid var(--line);
+               border-radius:10px; overflow:hidden; margin-top:14px; }
   aside { border-right:1px solid var(--line); padding:16px; background:var(--panel); }
-  aside h2, main h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); }
-  .param { margin:10px 0; }
+  aside h3, .maincol h3 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); }
+  .param { margin:10px 0; font-size:13px; }
   .param label { display:flex; justify-content:space-between; color:var(--dim); font-size:12px; }
   .param label b { color:var(--txt); }
   .param input[type=range] { width:100%; }
-  .param input[type=number] { width:64px; background:var(--bg); color:var(--txt); border:1px solid var(--line); }
+  .param input[type=number] { width:60px; background:var(--bg); color:var(--txt); border:1px solid var(--line); }
   .row { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
   button { background:#21262d; color:var(--txt); border:1px solid var(--line);
            padding:8px 12px; cursor:pointer; font:inherit; font-size:13px; border-radius:6px; }
   button:hover { border-color:var(--acc); }
   button.primary { background:#1f6feb; border-color:#1f6feb; }
-  main { padding:16px 20px; }
+  button.tour { background:#238636; border-color:#238636; font-weight:600; }
+  .maincol { padding:16px 18px; min-width:0; }
   #log { background:#010409; border:1px solid var(--line); border-radius:8px;
-         padding:14px; min-height:280px; max-height:46vh; overflow:auto; white-space:pre-wrap; }
+         padding:14px; min-height:260px; max-height:44vh; overflow:auto;
+         white-space:pre-wrap; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
   .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
-  .acc { color:var(--acc); } .dim { color:var(--dim); }
+  .acc { color:var(--acc); } .say { color:#d2a8ff; }
   #timeline { display:flex; gap:6px; margin:12px 0; flex-wrap:wrap; }
-  .chip { border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-size:12px; background:var(--panel); }
+  .chip { border:1px solid var(--line); border-radius:6px; padding:6px 10px;
+          font-size:12px; background:var(--panel); font-family:ui-monospace,Menlo,monospace; }
   #audit { background:#010409; border:1px solid var(--line); border-radius:8px;
-           padding:14px; max-height:30vh; overflow:auto; white-space:pre; font-size:12px; }
-  footer { padding:10px 22px; border-top:1px solid var(--line); color:var(--dim); font-size:12px; }
-  a { color:var(--acc); }
+           padding:14px; max-height:28vh; overflow:auto; white-space:pre;
+           font-size:12px; font-family:ui-monospace,Menlo,monospace; }
+  footer { padding:14px 22px 30px; border-top:1px solid var(--line); color:var(--dim); font-size:12px; }
+  footer a, section a { color:var(--acc); }
 </style>
 </head>
 <body>
-<header>
-  <h1>Contract-Gated Lease Controller (CGLC) — live demo</h1>
-  <p>Worker executes inside bounded leases · controller authorizes effort · gates authorize completion.
-     Same equations as <span class="dim">src/cglc/</span> (Sec 14 normative). No backend — runs in this page.</p>
+
+<header class="hero">
+  <h1>An AI research assistant that knows when to stop</h1>
+  <p class="sub">This project — the <b>Contract-Gated Lease Controller (CGLC)</b> — fixes
+  <b>effort miscalibration</b>: AI assistants that quit before reading the key document,
+  ramble on long after the answer is solid, or dig deeper in the wrong direction.
+  Everything below runs live in this page — no backend, no setup.</p>
 </header>
-<div class="wrap">
-  <aside>
-    <h2>Literature-backed parameters</h2>
-    <div class="param"><label>tau_J (CGDP) <b id="v-tauJ">0.60</b></label>
-      <input id="p-tauJ" type="range" min="0" max="1" step="0.05" value="0.6"></div>
-    <div class="param"><label>tau_U (CGDP) <b id="v-tauU">0.30</b></label>
-      <input id="p-tauU" type="range" min="0" max="1" step="0.05" value="0.3"></div>
-    <div class="param"><label>p persistence <b id="v-p">2</b></label>
-      <input id="p-p" type="number" min="1" max="6" value="2"></div>
-    <div class="param"><label>lambda_b (budget) <b id="v-lb">0.70</b></label>
-      <input id="p-lb" type="range" min="0" max="1.5" step="0.05" value="0.7"></div>
-    <div class="param"><label>lease SHORT / STANDARD / EXTENDED</label>
+<nav>
+  <a href="#problem">1 · The problem</a><a href="#idea">2 · The idea</a><a href="#how">3 · How it works</a><a href="#demo">4 · Live demo</a><a href="#numbers">5 · The numbers</a><a href="#proof">6 · Proof</a>
+</nav>
+
+<section id="problem">
+  <h2>1 · The problem we solve</h2>
+  <p>Imagine asking an AI: <i>"Compare these three system designs from the attached documents and tell me which is strongest."</i>
+  Three things routinely go wrong:</p>
+  <div class="cards">
+    <div class="card"><h3>🛑 Quitting too early</h3><p>The answer <b>sounds confident</b> but never read the third document. Nobody notices — it <i>looks</i> finished.</p></div>
+    <div class="card"><h3>🔁 Rambling too long</h3><p>The answer was solid after 3 searches, but the assistant does <b>12 more "just to be thorough"</b> — burning time, money, and your patience.</p></div>
+    <div class="card"><h3>🧭 Wrong direction</h3><p>All the evidence is in a different set of documents, but the assistant keeps <b>re-phrasing the same failed search</b> instead of pivoting.</p></div>
+  </div>
+  <p>Today's fixes are crude: <span class="mono">max_tokens</span>, "be thorough but concise", or a fixed number of searches.
+  None of them can tell <b>done</b> apart from <b>stuck</b> apart from <b>blocked</b>. That distinction is what this project adds.</p>
+</section>
+
+<section id="idea">
+  <h2>2 · The idea, in one analogy</h2>
+  <p>Think of a <b>research assistant</b> and a <b>manager</b>:</p>
+  <div class="cards">
+    <div class="card"><h3>👩‍💻 The worker (assistant)</h3><p>Reads documents, searches, drafts the answer. Good at research — <b>bad at judging when to stop</b> (like most of us).</p></div>
+    <div class="card"><h3>🧑‍💼 The controller (manager)</h3><p>Never does the research itself. It writes a <b>contract</b> (what "done" means), hands out small <b>leases</b> ("do up to 3 searches toward this gap, then report back"), and checks the work at each <b>checkpoint</b>.</p></div>
+    <div class="card"><h3>✅ The gate (checklist)</h3><p>Finishing requires a <b>checklist</b>: a draft exists, all required reading is done, every key claim has evidence, the format is right, nothing is blocked. <b>One unchecked box = no finish.</b></p></div>
+  </div>
+  <p><b>The golden rule:</b> finishing is about the <i>checklist</i>, never about "I feel done" or "I've searched enough."
+  Effort decisions (keep going? verify? change direction?) use cheap signals plus a cost-benefit score — and can <b>never override the checklist</b>.</p>
+</section>
+
+<section id="how">
+  <h2>3 · How it works, step by step</h2>
+  <ol class="steps">
+    <li><b>Write the contract.</b> Before any research: goal, must-do steps (e.g. "read all three designs"), claims needing evidence, required answer format. <span class="dim">→ code: <span class="mono">contracts.py</span></span></li>
+    <li><b>Grant a lease.</b> "You may do up to <b>3 actions</b> toward closing gap X." Leases are SHORT (1), STANDARD (3) or EXTENDED (5). A lease is permission for <i>one</i> intent — never a blank cheque. <span class="dim">→ <span class="mono">leases.py</span></span></li>
+    <li><b>Worker acts; everything is logged.</b> Each search/reading is appended to an immutable trace with its cost. No interpretation yet — just facts. <span class="dim">→ <span class="mono">trace.py</span></span></li>
+    <li><b>Checkpoint fires on events only</b> — worker asks to finish, lease runs out, same search repeats with nothing new, a contradiction appears, budget gets tight. <i>Not</i> after every step (that's the expensive mistake others make). <span class="dim">→ <span class="mono">guards.py</span></span></li>
+    <li><b>Decide: checklist first, effort second.</b> If every checklist box passes → <span class="mono">ALLOW_FINALIZE</span>. Otherwise rank the options — keep going, double-check a claim, or pivot — by <b>value per cost</b> and grant the next lease. If nothing can proceed: ask the user, or report blocked (an honest "I can't finish", never dressed up as success). <span class="dim">→ <span class="mono">controller.py, scoring.py, gates.py</span></span></li>
+  </ol>
+  <p><b>How "stuck" is detected (cheaply):</b> if the last <span class="mono">p</span> searches look almost identical (<span class="mono">J ≥ tau_J</span>)
+  and bring almost nothing new (<span class="mono">UPR ≤ tau_U</span>), the lease ends and a checkpoint inspects. That signal means <i>"look closer"</i> — never <i>"we're done"</i>.
+  <span class="dim">→ <span class="mono">stagnation.py</span></span></p>
+</section>
+
+<section id="demo">
+  <h2>4 · Live demo — watch it happen</h2>
+  <p>Press <b>🎬 2-minute guided tour</b> and just read: it narrates each event as the controller handles it.
+  Or press the scenario buttons yourself and drag the sliders to see how thresholds change behavior.</p>
+  <div class="demo-grid">
+    <aside>
+      <h3>Parameters (research defaults)</h3>
+      <div class="param"><label>tau_J: "same search" bar <b id="v-tauJ">0.60</b></label>
+        <input id="p-tauJ" type="range" min="0" max="1" step="0.05" value="0.6"></div>
+      <div class="param"><label>tau_U: "nothing new" bar <b id="v-tauU">0.30</b></label>
+        <input id="p-tauU" type="range" min="0" max="1" step="0.05" value="0.3"></div>
+      <div class="param"><label>p: repeats before alarm <b id="v-p">2</b></label>
+        <input id="p-p" type="number" min="1" max="6" value="2"></div>
+      <div class="param"><label>lambda_b: cost pressure <b id="v-lb">0.70</b></label>
+        <input id="p-lb" type="range" min="0" max="1.5" step="0.05" value="0.7"></div>
+      <div class="param"><label>lease sizes S / M / L</label>
+        <span class="row">
+          <input id="p-s" type="number" min="1" max="3" value="1">
+          <input id="p-m" type="number" min="1" max="6" value="3">
+          <input id="p-e" type="number" min="1" max="9" value="5">
+        </span></div>
+      <div class="row"><button id="b-reset">Reset research defaults</button></div>
+      <h3>Scenarios</h3>
       <div class="row">
-        <input id="p-s" type="number" min="1" max="3" value="1">
-        <input id="p-m" type="number" min="1" max="6" value="3">
-        <input id="p-e" type="number" min="1" max="9" value="5">
-      </div></div>
-    <div class="row"><button id="b-reset">Reset literature defaults</button></div>
-    <h2>Scenarios</h2>
-    <div class="row">
-      <button class="primary" id="b-full">▶ Full comparison run</button>
-      <button id="b-stag">Repeated queries → stall</button>
-      <button id="b-gate">Premature finalize → blocked</button>
+        <button class="tour" id="b-tour">🎬 2-minute guided tour</button>
+        <button class="primary" id="b-full">▶ Full run</button>
+        <button id="b-stag">Repeated queries → stall</button>
+        <button id="b-gate">Premature finish → blocked</button>
+      </div>
+      <p class="dim" style="font-size:12px">Corpus: design-A / B / C. The worker ranks documents by word overlap with the open question — a stand-in for any real search tool.</p>
+    </aside>
+    <div class="maincol">
+      <h3>Run log</h3>
+      <div id="log"><span class="dim">Press 🎬 guided tour, or any scenario button…</span></div>
+      <h3>Lease / checkpoint timeline</h3>
+      <div id="timeline"></div>
+      <h3>Audit record — every decision, reproducible</h3>
+      <div id="audit"><span class="dim">—</span></div>
     </div>
-    <p class="dim" style="font-size:12px">Docs: design-A / design-B / design-C (fixed corpus, TF overlap ranker —
-      same role as <span class="dim">FixedCorpusWorker</span>).</p>
-  </aside>
-  <main>
-    <h2>Run log</h2>
-    <div id="log"><span class="dim">Press a scenario button…</span></div>
-    <h2>Lease / checkpoint timeline</h2>
-    <div id="timeline"></div>
-    <h2>Audit record (Sec 7.5)</h2>
-    <div id="audit"><span class="dim">—</span></div>
-  </main>
-</div>
-<footer>Repo: ARDC — Adaptive Research Depth Control · core math: UPR_t = |C_t\H_{t-1}|/max(1,|C_t|) ·
-  Stagnated_t = AND over p rounds (J≥tau_J ∧ UPR≤tau_U) · r_t = max(0,u)/(d+eps) ·
-  ALLOW = C_terminal ∧ C_process ∧ C_evidence ∧ C_answer ∧ ¬C_blocker</footer>
+  </div>
+</section>
+
+<section id="numbers">
+  <h2>5 · The numbers, and where they come from</h2>
+  <p>Every default below is copied from the research paper that discovered it — <b>starting points, not magic constants</b>.
+  The architecture (contract → lease → checkpoint → checklist) is fixed; these knobs are tuned per deployment and every run logs them.</p>
+  <table class="params">
+    <tr><th>Knob</th><th>Default</th><th>Plain meaning</th><th>Source paper result</th></tr>
+    <tr><td class="mono">tau_J, tau_U, p</td><td class="mono">0.6, 0.3, 2</td><td>"same search" / "nothing new" bars + repeats needed</td><td>−39% tokens, accuracy up on 3 benchmarks</td></tr>
+    <tr><td class="mono">lambda_b</td><td class="mono">0.7</td><td>how strongly tight budget discourages costly actions</td><td>−27% wall-clock, better answers, 48 test cells</td></tr>
+    <tr><td class="mono">HALT tau=0.0</td><td class="mono">ALL_MATCH</td><td>every required reasoning hop must show evidence</td><td>−20–45% wasted search loops</td></tr>
+    <tr><td class="mono">theta_e=0.85</td><td class="mono">coverage target</td><td>fraction of requirements that must be covered (comparison mode)</td><td>full coverage in ~3 rounds not 7</td></tr>
+    <tr><td class="mono">tau_len=3000</td><td class="mono">noise filter</td><td>observations longer than this get truncated before review</td><td>accuracy 30% → 47% on agent benchmark</td></tr>
+    <tr><td class="mono">T 0.7 / 0.0</td><td class="mono">creativity / discipline</td><td>brainstorm loosely, commit deterministically</td><td>results robust across settings</td></tr>
+    <tr><td class="mono">leases 1 / 3 / 5</td><td class="mono">S / M / L</td><td>verify ≈ 1 action, normal ≈ 3, early exploration ≈ 5</td><td>project convention, all logged</td></tr>
+  </table>
+</section>
+
+<section id="proof">
+  <h2>6 · How we'd know if this is wrong (proof, not promises)</h2>
+  <p>The design states its own kill criteria — if any of these turn out true, the controller isn't earning its keep:</p>
+  <ul>
+    <li>A plain "be thorough" prompt or a fixed search budget matches it on quality.</li>
+    <li>The controller's own cost eats the time/money it saves.</li>
+    <li>Unsupported or premature answers <i>increase</i>.</li>
+    <li>Pivoting never beats "just search more in the same place".</li>
+  </ul>
+  <p>Planned comparisons: uncontrolled worker → fixed-shallow / fixed-deep budgets → generic prompt → fixed checkpoints → CGLC without stall detection → CGLC without scoring → <b>full CGLC</b>.
+  Measured on correctness, checklist compliance, evidence grounding, user time, system cost, and controller mistakes (false finish, false block, wrong pivot).
+  <span class="dim">→ code: <span class="mono">src/cglc/evaluate/</span>, tests: <span class="mono">pytest -q</span> (18 tests).</span></p>
+</section>
+
+<footer>ARDC — Adaptive Research Depth Control · CGLC worker V1 · thresholds tunable, architecture frozen ·
+<a href="https://github.com/abhinavshrivastava950/ARDC---Adaptive-Research-Depth-Control">GitHub repo</a></footer>
 
 <script>
 "use strict";
-/* ---- core equations (mirror src/cglc/*.py) ---- */
+/* Core equations mirror src/cglc/*.py (Sec 14 normative). Narration is plain-English. */
 const tok = s => new Set((s.toLowerCase().match(/[a-z0-9]+/g) || []));
 function jaccard(a, b) {
   if (!a.size && !b.size) return 1.0;
@@ -120,19 +226,19 @@ function getCfg() {
     EXTENDED: +document.getElementById("p-e").value | 0
   };
 }
-/* ---- tiny logger ---- */
 const logEl = document.getElementById("log"),
       tlEl = document.getElementById("timeline"),
       auEl = document.getElementById("audit");
 function reset(){ logEl.innerHTML = ""; tlEl.innerHTML = ""; auEl.innerHTML = "<span class='dim'>—</span>"; }
 function line(html){ logEl.innerHTML += html + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+function say(t){ line(`<span class="say">💬 ${t}</span>`); }
 function chip(txt, cls){ tlEl.innerHTML += `<span class="chip ${cls||""}">${txt}</span>`; }
 function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/* ---- Scenario 1: stagnation ---- */
-document.getElementById("b-stag").onclick = () => {
-  reset(); const c = getCfg();
-  line(`<span class="acc">STAGNATION DEMO</span> <span class="dim">tau_J=${c.tauJ} tau_U=${c.tauU} p=${c.p}</span>`);
+function stagDemo(c, narrate) {
+  if (narrate) say("The worker keeps asking the same thing. Watch the 'nothing new' number collapse…");
+  line(`<span class="acc">STAGNATION DEMO</span> <span class="dim">same-search bar=${c.tauJ}, nothing-new bar=${c.tauU}, repeats=${c.p}</span>`);
   const seen = new Set(); let actions = [], hist = [];
   const queries = ["compare architecture cost","compare architecture cost",
                    "compare architecture cost","compare architecture cost"];
@@ -141,41 +247,39 @@ document.getElementById("b-stag").onclick = () => {
     const J = actions.length ? Math.max(...actions.slice(-5).map(a => jaccard(tok(q), tok(a)))) : 0;
     const U = upr(chunks[i], seen);
     chunks[i].forEach(x => seen.add(x)); actions.push(q); hist.push([J, U]);
-    const qual = J >= c.tauJ && U <= c.tauU;
     const stag = hist.length >= c.p && hist.slice(-c.p).every(([a,b]) => a >= c.tauJ && b <= c.tauU);
-    line(` step ${i}: J=${J.toFixed(2)} UPR=${U.toFixed(2)} qualifying=${qual} → ` +
-         (stag ? `<span class="warn">STAGNATED — lease ends, checkpoint fires</span>` : `<span class="dim">continue lease</span>`));
-    chip(`step ${i} ${stag ? "STAGNATED" : "work"}`, stag ? "warn" : "");
+    line(` search ${i}: similarity=${J.toFixed(2)} (same? ${J >= c.tauJ}) · new-stuff=${U.toFixed(2)} (nothing-new? ${U <= c.tauU}) → ` +
+         (stag ? `<span class="warn">🔔 STUCK — lease ends, manager inspects</span>` : `<span class="dim">keep working</span>`));
+    chip(`search ${i} ${stag ? "STUCK" : "work"}`, stag ? "warn" : "");
   });
-  line(`<span class="dim">Stagnation never authorizes finalization — it only triggers semantic inspection.</span>`);
-};
+  if (narrate) say("Key point: 'stuck' only summons the manager — it can NEVER declare the job finished.");
+  else line(`<span class="dim">Stuck ≠ done: it triggers inspection, never finalization.</span>`);
+}
 
-/* ---- Scenario 2: gate block ---- */
-document.getElementById("b-gate").onclick = () => {
-  reset();
-  line(`<span class="acc">FINALIZATION-GATE DEMO</span> <span class="dim">worker proposes a fluent, confident answer…</span>`);
+function gateDemo(narrate) {
+  if (narrate) say("Now the worker drafts a fluent, confident answer — but one key claim has zero evidence…");
+  line(`<span class="acc">CHECKLIST DEMO</span> <span class="dim">worker asks: "can I finish?"</span>`);
   const gates = { C_terminal:true, C_process:true, C_evidence:false, C_answer:true, C_blocker:false };
   const allow = gates.C_terminal && gates.C_process && gates.C_evidence && gates.C_answer && !gates.C_blocker;
-  line(` gates: ${esc(JSON.stringify(gates))}`);
+  line(` checklist: draft✓ required-reading✓ <b>evidence✗</b> format✓ blocked?no`);
   line(allow ? `<span class="ok">ALLOW_FINALIZE</span>`
-             : `<span class="bad">ALLOW = false — decisive claim lacks evidence (C_evidence)</span>`);
-  if (!allow) { chip("finalize proposed", "bad"); chip("→ VERIFY lease (1 action)", "warn");
-    line(` → controller issues <span class="warn">VERIFY</span> lease instead of finalizing. Clean + confident ≠ complete.`); }
-};
+             : `<span class="bad">⛔ FINISH DENIED — one box unchecked (evidence)</span>`);
+  chip("finish requested", "bad"); chip("→ VERIFY lease (1 action)", "warn");
+  if (narrate) say("Confident ≠ complete. The manager orders one double-check instead of accepting the answer.");
+  else line(` → controller issues <span class="warn">VERIFY</span> lease. Clean + confident ≠ complete.`);
+}
 
-/* ---- Scenario 3: full run (mirrors Runner.run + rule_judge) ---- */
-document.getElementById("b-full").onclick = () => {
-  reset(); const c = getCfg();
-  line(`<span class="acc">FULL RUN</span> <span class="dim">leases ${c.SHORT}/${c.STANDARD}/${c.EXTENDED} · lambda_b=${c.lb}</span>`);
+function fullRun(c, narrate) {
+  if (narrate) say("Full story: the manager grants a 3-search lease toward the open question…");
+  line(`<span class="acc">FULL RUN</span> <span class="dim">lease sizes ${c.SHORT}/${c.STANDARD}/${c.EXTENDED} · cost pressure=${c.lb}</span>`);
   const seen = new Set(); let actions = [], hist = [], draft = "", ckpt = 0;
   const gaps = ["support comparison with evidence"];
-  let support = 0; // ledger s_it proxy
-  let lease = { intent:"CONTINUE", cap:c.STANDARD, used:0 };
+  let support = 0;
+  let lease = { intent:"CONTINUE", cap:c.STANDARD, used:0, n:1 };
   chip("lease L1 CONTINUE", "");
   const audits = [];
   let guard = 0;
   while (ckpt < 4 && guard++ < 20) {
-    // worker acts inside lease
     let stalled = false;
     while (lease.used < lease.cap) {
       const q = gaps.join(" ");
@@ -185,42 +289,62 @@ document.getElementById("b-full").onclick = () => {
       const U = upr(chunks, seen);
       chunks.forEach(x => seen.add(x)); actions.push(q); hist.push([J, U]);
       lease.used++;
-      const hit = ranked.some(id => /architecture|evidence|comparison/.test(DOCS[id]));
-      if (hit) support = Math.min(1, support + 0.5);
+      if (ranked.some(id => /architecture|evidence|comparison/.test(DOCS[id]))) support = Math.min(1, support + 0.5);
       draft = Object.values(DOCS).join(" ").slice(0, 900);
       stalled = hist.length >= c.p && hist.slice(-c.p).every(([a,b]) => a >= c.tauJ && b <= c.tauU);
-      // value-per-budget ranking of CONTINUE vs REDIRECT (Sec 14.5, simplified)
       const rho = 0.15, dC = 0.05, dR = 0.08;
       const uC = 0.5 + 0.14 * (support < 1 ? 1 : 0) - c.lb * rho * dC;
       const uR = 0.5 + 0.14 * 0.5 - 0.10 * (stalled ? 1 : 0) - c.lb * rho * dR;
       const rC = Math.max(0, uC) / (dC + 1e-5), rR = Math.max(0, uR) / (dR + 1e-5);
-      line(` <span class="dim">action ${actions.length} [${lease.intent}]</span> J=${J.toFixed(2)} UPR=${U.toFixed(2)} ` +
-           `support=${support.toFixed(1)} r_CONT=${rC.toFixed(1)} r_REDIR=${rR.toFixed(1)}${stalled ? ` <span class="warn">stall</span>` : ""}`);
+      line(` <span class="dim">search ${actions.length} [${lease.intent}]</span> similarity=${J.toFixed(2)} new-stuff=${U.toFixed(2)} ` +
+           `evidence=${support.toFixed(1)} value-per-cost keep=${rC.toFixed(1)} pivot=${rR.toFixed(1)}${stalled ? ` <span class="warn">stuck</span>` : ""}`);
       if (stalled || lease.used >= lease.cap) break;
     }
-    // checkpoint
     ckpt++;
     const expired = lease.used >= lease.cap;
     const evSuff = support >= 1 && draft.length > 0;
     const gates = { C_terminal: draft.length > 0, C_process: true, C_evidence: evSuff, C_answer: true, C_blocker: false };
-    const allow = Object.values(gates).every((v, i) => i === 4 ? !v : v);
+    const allow = gates.C_terminal && gates.C_process && gates.C_evidence && gates.C_answer && !gates.C_blocker;
     const reasons = [...(expired ? ["lease_expiry"] : []), ...(stalled ? ["structural_stall"] : [])];
     let decision;
     if (allow) decision = "ALLOW_FINALIZE";
     else if (support < 1 && stalled) decision = "REDIRECT";
     else if (support < 1) decision = "CONTINUE";
     else decision = "VERIFY";
-    chip(`ckpt${ckpt} [${reasons.join("+")||"final"}] → ${decision}`, allow ? "ok" : "warn");
-    line(`<span class="acc">ckpt${ckpt}</span> triggers=[${reasons}] gates=${esc(JSON.stringify(gates))} → <b>${decision}</b>`);
+    chip(`checkpoint ${ckpt} [${reasons.join("+")||"finish?"}] → ${decision}`, allow ? "ok" : "warn");
+    line(`<span class="acc">checkpoint ${ckpt}</span> because [${reasons}] · checklist=${esc(JSON.stringify(gates))} → <b>${decision}</b>`);
     audits.push({ checkpoint: ckpt, triggers: reasons, gates, decision,
       remaining_budget: { tool_calls: 30 - actions.length * 3 }, controller_cost: { tokens: 500 } });
     if (decision === "ALLOW_FINALIZE") break;
     const cap = decision === "VERIFY" || decision === "REDIRECT" ? c.SHORT : c.STANDARD;
-    lease = { intent: decision, cap, used: 0 };
+    lease = { intent: decision, cap, used: 0, n: ckpt + 1 };
     chip(`lease L${ckpt + 1} ${decision}`, "");
   }
-  auEl.textContent = JSON.stringify({ contract: "K-demo (benchmark-confirmed)", decisions: audits }, null, 2);
-  line(`<span class="ok">done</span> <span class="dim">${actions.length} worker actions · ${ckpt} checkpoint(s) · full audit above</span>`);
+  auEl.textContent = JSON.stringify({ contract: "K-demo (goal + must-dos + evidence needs)", decisions: audits }, null, 2);
+  if (narrate) say(`Done: ${actions.length} searches, ${ckpt} manager check(s), every box ticked — the audit above proves it.`);
+  else line(`<span class="ok">done</span> <span class="dim">${actions.length} searches · ${ckpt} checkpoint(s) · audit above</span>`);
+}
+
+document.getElementById("b-stag").onclick = () => { reset(); stagDemo(getCfg(), false); };
+document.getElementById("b-gate").onclick = () => { reset(); gateDemo(false); };
+document.getElementById("b-full").onclick = () => { reset(); fullRun(getCfg(), false); };
+document.getElementById("b-tour").onclick = async () => {
+  reset();
+  say("Welcome! You're the manager's supervisor. Three short scenes — watch what the controller does.");
+  await sleep(900);
+  say("SCENE 1 of 3 — the assistant gets stuck repeating itself…");
+  await sleep(900);
+  stagDemo(getCfg(), true);
+  await sleep(1600);
+  say("SCENE 2 of 3 — the assistant tries to finish early with an unsupported claim…");
+  await sleep(900);
+  gateDemo(true);
+  await sleep(1600);
+  say("SCENE 3 of 3 — the whole loop, start to finish…");
+  await sleep(900);
+  fullRun(getCfg(), true);
+  await sleep(600);
+  say("That's CGLC: leases bound the work, events trigger inspections, and only the checklist can finish the job. Try the sliders — e.g. raise 'repeats before alarm' and watch Scene 1 stay silent longer.");
 };
 
 document.getElementById("b-reset").onclick = () => {
