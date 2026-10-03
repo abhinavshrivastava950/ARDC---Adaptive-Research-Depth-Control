@@ -79,3 +79,50 @@ def coverage_ok(supported: int, total: int, theta: float) -> bool:
     if total <= 0:
         return False
     return (supported / total) >= theta
+
+
+@dataclass
+class Authorization:
+    """Finalization authorizer output (Table 9).
+
+    Separation of proposal from authorization (ECT): the worker may propose
+    completion; only this authorizer permits it, via the conjunctive gate.
+    """
+
+    allowed: bool
+    certificate: dict | None = None  # contract snapshot + receipts iff allowed
+    reasons: list = None  # rejection reasons iff denied
+
+    def __post_init__(self) -> None:
+        if self.reasons is None:
+            self.reasons = []
+
+
+class FinalizationAuthorizer:
+    """Applies the conjunctive gate and records authorization evidence.
+
+    Output: ALLOW_FINALIZE certificate or rejection reasons (Table 9).
+    Per §7.5 an authorization additionally stores the exact contract snapshot
+    and the evidence receipts that supported it.
+    """
+
+    def authorize(self, gates: GateSnapshot, contract, ledger,
+                  checkpoint_id: int) -> Authorization:
+        if gates.allow:
+            return Authorization(
+                allowed=True,
+                certificate={
+                    "contract": contract.to_dict(),
+                    "receipts": {
+                        oid: [
+                            {"receipt_id": r.receipt_id, "source_id": r.source_id,
+                             "span_id": r.span_id, "proposition": r.proposition,
+                             "relation": r.relation, "strength": r.strength}
+                            for r in rs
+                        ]
+                        for oid, rs in ledger.receipts.items()
+                    },
+                    "checkpoint_id": checkpoint_id,
+                },
+            )
+        return Authorization(allowed=False, reasons=list(gates.reasons))

@@ -64,3 +64,26 @@ def loop_detected(action_texts: List[str], tau_loop: int = 3) -> bool:
 
 def should_checkpoint_step(count_since_check: int, tau_step: int) -> bool:
     return count_since_check >= tau_step
+
+
+@dataclass
+class OverheadGuard:
+    """Controller-overhead failsafe (§7.4).
+
+    If controller cost exceeds `fraction` of total (controller + worker)
+    spend, checkpoint frequency is downgraded (L_max doubled) — but the
+    mandatory finalization interception is always retained.
+    """
+
+    fraction: float = 0.25
+    l_max: int = 5
+    downgraded: bool = False
+
+    def observe(self, controller_tokens: float, worker_tokens: float) -> bool:
+        total = controller_tokens + worker_tokens
+        if total > 0 and not self.downgraded:
+            if controller_tokens / total > self.fraction:
+                self.l_max *= 2
+                self.downgraded = True
+                return True
+        return False

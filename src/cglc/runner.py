@@ -21,10 +21,10 @@ from .audit import DecisionRecord
 from .config import CGLCConfig, DEFAULT_CONFIG
 from .contracts import TaskContract
 from .controller import rank_actions, decide, lease_category_for
-from .gates import GateSnapshot, evaluate_finalization
+from .gates import GateSnapshot, evaluate_finalization, FinalizationAuthorizer
 from .guards import schedule_checkpoint
 from .ledger import EvidenceLedger, EvidenceReceipt
-from .leases import Lease
+from .leases import Lease, OverheadGuard
 from .stagnation import StagnationTracker
 from .trace import Trace
 from .worker.base import DocumentWorker
@@ -32,7 +32,9 @@ from .worker.base import DocumentWorker
 
 @dataclass
 class Judgment:
-    """Structured semantic-controller response (cited receipts required)."""
+    """Structured semantic-controller response (Table 10: gate statuses,
+    open gaps, contradiction flags, progress label, direction label,
+    rationale + receipt ids)."""
 
     evidence_sufficient: bool = False
     process_complete: bool = False
@@ -42,6 +44,8 @@ class Judgment:
     blocker_present: bool = False
     weak_or_contested: bool = False
     has_alternative: bool = False
+    progress_label: str = "UNKNOWN"  # e.g. PROGRESSING / STALLED / COMPLETE
+    direction_label: str = "UNKNOWN"  # e.g. PRODUCTIVE / VERIFY_NEEDED
     open_gaps: List[str] = field(default_factory=list)
     receipt_ids: List[str] = field(default_factory=list)
     action_features: Dict[str, S.ActionFeatures] = field(default_factory=dict)
@@ -53,18 +57,22 @@ def rule_judge(contract: TaskContract, ledger: EvidenceLedger, draft: str) -> Ju
     gaps = [o.obligation_id for o in contract.evidence_obligations
             if ledger.s.get(o.obligation_id, 0.0) < 1.0]
     suff = not gaps and bool(draft.strip())
+    contested = any(ledger.c.values())
     feats = {
         "CONTINUE": S.ActionFeatures(delta=0.5 if gaps else 0.0,
                                      G=1.0 if gaps else 0.0, d=0.05),
         "VERIFY": S.ActionFeatures(
-            delta=0.5 if any(ledger.c.values()) else 0.0,
-            V=1.0 if any(ledger.c.values()) else 0.0, d=0.03),
+            delta=0.5 if contested else 0.0,
+            V=1.0 if contested else 0.0, d=0.03),
         "REDIRECT": S.ActionFeatures(delta=0.5, R=0.5, G=0.5, L=0.5, d=0.08),
     }
     return Judgment(
         evidence_sufficient=suff,
         process_complete=True,  # caller refines with real duty checks
         answer_conforms=bool(draft.strip()),
+        weak_or_contested=contested,
+        progress_label="COMPLETE" if suff else ("STALLED" if contested else "PROGRESSING"),
+        direction_label="VERIFY_NEEDED" if contested else "PRODUCTIVE",
         open_gaps=gaps,
         action_features=feats,
         rationale="rule-judge: gaps drive CONTINUE; contradictions drive VERIFY",
@@ -72,6 +80,10 @@ def rule_judge(contract: TaskContract, ledger: EvidenceLedger, draft: str) -> Ju
 
 
 JudgeFn = Callable[[TaskContract, EvidenceLedger, str], Judgment]
+# Benchmark/user-supplied hard-duty check (§10.1 step 1): returns
+# (all_duties_complete, unmet_duty_ids). Unmet duties are targeted by the
+# next lease per §5.5 step 2.
+ProcessCheck = Callable[[], tuple[bool, List[str]]]
 
 
 @dataclass
@@ -85,10 +97,13 @@ class RunResult:
 class Runner:
     def __init__(self, cfg: CGLCConfig = DEFAULT_CONFIG,
                  judge: JudgeFn = rule_judge,
-                 max_checkpoints: int = 12) -> None:
+                 max_checkpoints: int = 12,
+                 overhead_fraction: float = 0.25) -> None:
         self.cfg = cfg
         self.judge = judge
         self.max_checkpoints = max_checkpoints
+        self.overhead_fraction = overhead_fraction
+        self.authorizer = FinalizationAuthorizer()
 
     def remaining(self, trace: Trace) -> Dict[str, float]:
         lim = self.cfg.limits.as_dict()
@@ -97,11 +112,28 @@ class Runner:
 
     def run(self, contract: TaskContract, worker: DocumentWorker,
             ledger: EvidenceLedger, trace: Trace,
-            process_complete_fn: Callable[[], bool] | None = None,
+            process_check: ProcessCheck | None = None,
             draft0: str = "") -> RunResult:
+        # §7.4: inconsistent contracts stop execution and request revision.
+        problems = contract.validate()
+        if problems:
+            rec = DecisionRecord(
+                checkpoint_id=0, contract_id=contract.contract_id,
+                contract_rev=contract.revision, lease_id=None,
+                trigger_reasons=["contract_invalid"], receipt_ids=[],
+                gates={"allow": False, "reasons": problems},
+                decision="ASK_USER", rejected=[],
+                remaining_budget=self.remaining(trace),
+                controller_cost={"tokens": 0.0},
+                note="contract revision required: " + "; ".join(problems))
+            return RunResult(decision="ASK_USER", draft=draft0,
+                             records=[rec], gates=None)
+
         stag = StagnationTracker(
             self.cfg.stagnation.tau_J, self.cfg.stagnation.tau_U,
             self.cfg.stagnation.p, self.cfg.stagnation.recent_window)
+        guard = OverheadGuard(fraction=self.overhead_fraction,
+                              l_max=self.cfg.lease.L_max)
         lease = Lease.make("CONTINUE", "STANDARD",
                            [o.obligation_id for o in contract.evidence_obligations])
         draft = draft0
@@ -109,6 +141,7 @@ class Runner:
         ckpt = 0
         prev_rho_tier = 0.0
         silence = 0
+        controller_tokens = 0.0
 
         while ckpt < self.max_checkpoints:
             # --- worker executes inside lease ---
@@ -168,7 +201,7 @@ class Runner:
                 blocker=bool(blocker),
                 contradiction=contradiction,
                 budget_tier_crossed=tier_crossed,
-                silence_hit=silence >= self.cfg.lease.L_max,
+                silence_hit=silence >= guard.l_max,
             )
             if not ev.run:
                 # No mandatory event: extend current direction with a fresh
@@ -179,8 +212,20 @@ class Runner:
             # --- checkpoint packet S_t + semantic judgment ---
             ckpt += 1
             silence = 0
+            controller_tokens += 500.0
+            # §7.4: downgrade checkpoint frequency on excess overhead,
+            # while mandatory finalization interception is retained.
+            downgraded = guard.observe(
+                controller_tokens, trace.consumed().get("tokens", 0.0))
             j = self.judge(contract, ledger, draft)
-            proc_done = process_complete_fn() if process_complete_fn else j.process_complete
+            if process_check is not None:
+                proc_done, unmet = process_check()
+            elif contract.process_duties:
+                # No benchmark/user duty check supplied: duties stay unmet
+                # and are targeted by the next lease (§5.5 step 2).
+                proc_done, unmet = False, [d.duty_id for d in contract.process_duties]
+            else:
+                proc_done, unmet = True, []
             gates = evaluate_finalization(
                 has_final_candidate=bool(draft.strip()),
                 process_complete=proc_done,
@@ -188,6 +233,7 @@ class Runner:
                 answer_conforms=j.answer_conforms,
                 blocker_present=bool(blocker) or j.blocker_present,
             )
+            auth = self.authorizer.authorize(gates, contract, ledger, ckpt)
             ranked = rank_actions(j.action_features, self.cfg, rho, rem,
                                   ["CONTINUE", "VERIFY", "REDIRECT"],
                                   contract.blockers)
@@ -195,25 +241,54 @@ class Runner:
                 gates, j.needs_user, j.infeasible, ranked,
                 weak_or_contested=j.weak_or_contested or contradiction,
                 stagnant=stag.stagnated(), has_alternative=j.has_alternative)
+
+            note = j.rationale
+            if downgraded:
+                note += " [overhead guard: checkpoint frequency downgraded]"
+            blocked_condition = ""
+            if decision == "REPORT_BLOCKED":
+                dead = [k for k, v in rem.items() if v <= 0]
+                if dead:
+                    blocked_condition = "budget exhausted: " + ",".join(dead)
+                elif blocker or j.blocker_present:
+                    blocked_condition = "material blocker: " + (blocker or "judge-flagged")
+                else:
+                    blocked_condition = "no feasible non-terminal action"
+
+            if decision in ("ALLOW_FINALIZE", "ASK_USER", "REPORT_BLOCKED"):
+                records.append(DecisionRecord(
+                    checkpoint_id=ckpt, contract_id=contract.contract_id,
+                    contract_rev=contract.revision,
+                    lease_id=lease.lease_id, trigger_reasons=ev.reasons,
+                    receipt_ids=list(j.receipt_ids),
+                    gates={"allow": gates.allow, "reasons": gates.reasons},
+                    decision=decision, rejected=rejected,
+                    remaining_budget=dict(rem),
+                    controller_cost={"tokens": 500.0},
+                    note=note,
+                    selected_lease_id=None,
+                    contract_snapshot=(auth.certificate or {}).get("contract"),
+                    supporting_receipts=(auth.certificate or {}).get("receipts"),
+                    blocked_condition=blocked_condition))
+                return RunResult(decision=decision, draft=draft,
+                                 records=records, gates=gates)
+            cat = lease_category_for(decision)
+            # §5.5 step 2: unmet hard duties are targeted first.
+            gaps = [f"duty:{u}" for u in unmet] + (j.open_gaps or
+                    [o.obligation_id for o in contract.evidence_obligations])
+            ran_under = lease.lease_id
+            lease = Lease.make(decision, cat, gaps)
             records.append(DecisionRecord(
                 checkpoint_id=ckpt, contract_id=contract.contract_id,
                 contract_rev=contract.revision,
-                lease_id=lease.lease_id, trigger_reasons=ev.reasons,
+                lease_id=ran_under, trigger_reasons=ev.reasons,
                 receipt_ids=list(j.receipt_ids),
                 gates={"allow": gates.allow, "reasons": gates.reasons},
                 decision=decision, rejected=rejected,
                 remaining_budget=dict(rem),
                 controller_cost={"tokens": 500.0},
-                note=j.rationale))
-
-            if decision in ("ALLOW_FINALIZE", "ASK_USER", "REPORT_BLOCKED"):
-                return RunResult(decision=decision, draft=draft,
-                                 records=records, gates=gates)
-            cat = lease_category_for(decision)
-            gaps = j.open_gaps or [o.obligation_id for o in contract.evidence_obligations]
-            lease = Lease.make(decision, cat, gaps)
-            for _r in records:
-                pass
+                note=note,
+                selected_lease_id=lease.lease_id))
 
         gates = evaluate_finalization(bool(draft.strip()), False, False,
                                       bool(draft.strip()), False,

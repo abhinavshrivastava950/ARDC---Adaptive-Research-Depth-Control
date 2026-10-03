@@ -19,7 +19,10 @@ contract = TaskContract.create(
 trace = Trace()
 ledger = EvidenceLedger([o.obligation_id for o in contract.evidence_obligations])
 worker = WorkerAdapter(FixedCorpusWorker(DOCS), trace)
-res = Runner().run(contract, worker, ledger, trace)
+# §10.1 step 1: hard duties are benchmark/user-supplied — compliance is
+# confirmed here, never inferred by the controller.
+res = Runner().run(contract, worker, ledger, trace,
+                   process_check=lambda: (True, []))
 print("decision:", res.decision)
 print("draft:", res.draft[:600])
 for r in res.records:

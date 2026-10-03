@@ -28,3 +28,32 @@ def test_halt_all_match_defaults():
 def test_coverage_theta():
     assert coverage_ok(85, 100, 0.85) is True
     assert coverage_ok(84, 100, 0.85) is False
+
+
+def test_authorizer_certificate_and_rejection():
+    from cglc.gates import FinalizationAuthorizer
+    from cglc.contracts import TaskContract
+    from cglc.ledger import EvidenceLedger
+    auth = FinalizationAuthorizer()
+    c = TaskContract.create("g", ["duty"], ["claim"])
+    led = EvidenceLedger(["ev-0"])
+    ok = evaluate_finalization(True, True, True, True, False)
+    cert = auth.authorize(ok, c, led, checkpoint_id=3)
+    assert cert.allowed is True
+    assert cert.certificate["contract"]["contract_id"] == c.contract_id
+    assert cert.certificate["checkpoint_id"] == 3
+    bad = evaluate_finalization(True, True, False, True, False)
+    rej = auth.authorize(bad, c, led, checkpoint_id=3)
+    assert rej.allowed is False and rej.reasons != []
+    assert rej.certificate is None
+
+
+def test_contract_validate_and_json():
+    from cglc.contracts import TaskContract
+    bad = TaskContract.create("", [], [])
+    assert "empty goal" in bad.validate()
+    assert "no hard obligations" in " ".join(bad.validate())
+    good = TaskContract.create("g", ["d"], ["e"])
+    assert good.validate() == []
+    d = good.to_dict()
+    assert d["provenance"] and d["revision"] == 1 and d["goal"] == "g"

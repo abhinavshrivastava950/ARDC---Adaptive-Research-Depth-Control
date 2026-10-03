@@ -67,7 +67,9 @@ contract = TaskContract.create(
 trace = Trace()
 ledger = EvidenceLedger([o.obligation_id for o in contract.evidence_obligations])
 worker = WorkerAdapter(FixedCorpusWorker(DOCS), trace)
-res = Runner().run(contract, worker, ledger, trace)
+# Benchmark confirms the (trivially satisfiable) process duties here.
+res = Runner().run(contract, worker, ledger, trace,
+                   process_check=lambda: (True, []))
 print(" decision:", res.decision)
 print(" trace events:", len(trace.events),
       "| budget consumed:", {k: round(v, 1) for k, v in trace.consumed().items()})

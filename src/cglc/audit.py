@@ -14,14 +14,19 @@ class DecisionRecord:
     contract_id: str
     contract_rev: int
     lease_id: str | None
-    trigger_reasons: List[str]
+    trigger_reasons: List[str]  # reason codes (Table 7 events)
     receipt_ids: List[str]
     gates: Dict[str, Any]
-    decision: str
+    decision: str  # decision_type (Table 10)
     rejected: List[str]
     remaining_budget: Dict[str, float]
     controller_cost: Dict[str, float]
     note: str = ""
+    # Table 10 / §7.5 terminal enrichments:
+    selected_lease_id: str | None = None  # lease issued for this decision
+    contract_snapshot: Dict[str, Any] | None = None  # ALLOW: exact contract
+    supporting_receipts: Dict[str, Any] | None = None  # ALLOW: evidence
+    blocked_condition: str = ""  # REPORT_BLOCKED: cause that prevented it
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, default=str)

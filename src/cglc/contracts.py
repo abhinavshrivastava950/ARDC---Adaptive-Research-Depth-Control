@@ -66,3 +66,40 @@ class TaskContract:
 
     def obligation_weights(self) -> Dict[str, float]:
         return {o.obligation_id: o.weight for o in self.evidence_obligations}
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Contract JSON plus provenance and revision ID (Table 9)."""
+        return {
+            "contract_id": self.contract_id,
+            "goal": self.goal,
+            "process_duties": [
+                {"duty_id": d.duty_id, "description": d.description}
+                for d in self.process_duties
+            ],
+            "evidence_obligations": [
+                {"obligation_id": o.obligation_id, "proposition": o.proposition,
+                 "weight": o.weight, "required_receipts": o.required_receipts}
+                for o in self.evidence_obligations
+            ],
+            "soft_prefs": self.soft_prefs,
+            "blockers": self.blockers,
+            "answer_schema": self.answer_schema,
+            "budget_policy": self.budget_policy,
+            "provenance": self.provenance,
+            "revision": self.revision,
+        }
+
+    def validate(self) -> List[str]:
+        """Structural contract check (§7.4: inconsistent contracts stop
+        execution and request revision instead of being optimized around)."""
+        problems: List[str] = []
+        if not self.goal.strip():
+            problems.append("empty goal")
+        if not self.process_duties and not self.evidence_obligations:
+            problems.append("no hard obligations (neither duties nor evidence)")
+        ids = [d.duty_id for d in self.process_duties] + [
+            o.obligation_id for o in self.evidence_obligations
+        ]
+        if len(set(ids)) != len(ids):
+            problems.append("duplicate obligation/duty ids")
+        return problems
