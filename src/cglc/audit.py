@@ -27,6 +27,7 @@ class DecisionRecord:
     contract_snapshot: Dict[str, Any] | None = None  # ALLOW: exact contract
     supporting_receipts: Dict[str, Any] | None = None  # ALLOW: evidence
     blocked_condition: str = ""  # REPORT_BLOCKED: cause that prevented it
+    trace_len: int = 0  # trace events logged when this checkpoint ran
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, default=str)

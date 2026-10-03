@@ -137,27 +137,89 @@ src/cglc/
   controller.py    decision order (§14.6) + fallback
   runner.py        event-driven Fig. 2 loop (pluggable LLM judge)
   audit.py         decision records (§7.5)
-  worker/          DocumentWorker interface, FixedCorpusWorker, WorkerAdapter
-  evaluate/        Table-16 metrics + §11.1 ablation ladder
-demo/              banner, explainer + live demo, GIF, MP4, screenshots
+  worker/          DocumentWorker interface, FixedCorpusWorker, LLMDocumentWorker (whole doc),
+                   RAGDocumentWorker (retrieval), ExtractiveWorker (offline), WorkerAdapter
+  llm.py           bring-your-own-key Claude client + JSON helpers + provider factory
+  llm_groq.py      Groq client: any Groq chat model, stdlib only, schema-validated JSON
+  judge.py         LLM checkpoint judge (cited receipts, fail-closed)
+  retrieval.py     dependency-free BM25 over chunks (RAG mode)
+  service.py       request -> run -> JSON for the web demo (validation, caps, key scrubbing)
+  web.py           local server: demo site + API (python -m cglc.web)
+  evaluate/        Table-16 metrics + §11.1 ablation list
+  bench/           benchmark harness: dataset adapters, contract regimes, the 9 arms, report
+demo/              site: explainer, "Try it" (try.js/try.css), simulator, GIF, MP4
+api/               Vercel Python functions (run, models, health)
+vercel.json        static site from demo/ + 60 s functions
 docs/              Pages-ready demo copy + architecture figure
 configs/           default.yaml (runnable literature defaults)
-examples/          quickstart.py, comparison_task.json, demo_run.py
-tests/             18 unit/integration tests
+examples/          quickstart.py (offline), llm_quickstart.py (real LLM), comparison_task.json, demo_run.py
+tests/             unit/integration tests (LLM paths use scripted fakes)
 ```
 
 ## 5. Reproduction
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                        # 18 tests: stagnation, budget, scoring, gates, controller, runner
+pytest -q                        # stagnation, budget, scoring, gates, controller, runner, LLM/Groq/RAG/service
 python examples/quickstart.py    # minimal controlled comparison run
 python examples/demo_run.py      # narrated terminal demo: stall, gate block, full run w/ audit
 ```
 
-To substitute a real checkpoint judge, implement `JudgeFn(contract, ledger, draft)` per
-`runner.py` (structured, low-variance call citing receipt IDs; keep the
-`LOW/MEDIUM/HIGH → 0/0.5/1` mapping fixed before evaluation).
+### Real LLM mode (bring your own key)
+
+`quickstart.py` and `demo_run.py` are **offline**: a TF-IDF worker and a rule-based judge, no
+network, no key. They prove the control logic, not answer quality. For a real run:
+
+```bash
+pip install -e ".[llm]"
+export ANTHROPIC_API_KEY=...          # PowerShell: $env:ANTHROPIC_API_KEY="..."
+python examples/llm_quickstart.py     # billed API calls
+```
+
+- **Key**: read from your environment by the Anthropic SDK (or `AnthropicClient(api_key=...)`).
+  Never stored, logged, or put in a config file.
+- **Model**: `claude-opus-5-5` by default; override with `CGLC_MODEL` (e.g. `claude-sonnet-5-5`
+  for a cheaper run).
+- **`LLMDocumentWorker`** does the research: it reads the corpus and cites verbatim quotes. Quotes
+  not found in the named document are dropped, so receipts can only point at real text.
+- **`LLMJudge`** is the checkpoint judge: a SUPPORTED claim needs a valid cited span, and any judge
+  failure keeps the finalization gate closed. Use `Runner(judge=..., harvest_receipts=False)`.
+- **Spend**: worker and judge token usage are charged to the real budget (`limits.tokens`);
+  cached-prefix reads are not.
+- **Sampling**: current Claude models reject `temperature`, so BATS `T_gen`/`T_select` stay in the
+  logged config but are not sent.
+- **Refusal fallbacks** (`AnthropicClient(fallbacks=True)`) are off by default and untested against
+  the live API.
+
+To use another provider, implement `LLMClient.complete_json` (see `llm.py`).
+
+### Groq (any model) and your own documents (RAG)
+
+```bash
+export GROQ_API_KEY=...                       # PowerShell: $env:GROQ_API_KEY="..."
+python -m cglc.web                            # http://127.0.0.1:8000, then "Try it"
+```
+
+The **Try it** section of the site takes any pasted/uploaded text or PDF, a question, and optional
+"what must be proven" requirements, then shows the verdict, the five gates, cited evidence, a
+step-by-step timeline and the spend. Pick **Groq** (load your key's model list or type any model id),
+**Claude**, or **Offline** (no key, no AI; mechanics only). Small inputs go into the prompt whole;
+large ones switch to retrieval (BM25 top passages) automatically. Groq works in `json_object` mode on
+every model; the reply is schema-validated with one repair retry, and anything invalid fails closed.
+
+### Deploy (Vercel)
+
+`vercel.json` serves `demo/` as the static site and `api/*.py` as 60-second Python functions that
+import `src/cglc`. Keys are sent per request over HTTPS, used for that run only, never stored or
+logged; hosted runs are capped (depth presets, 50 s time limit, 600k characters).
+
+### Benchmark harness (no results yet)
+
+`python -m cglc.bench.run` wraps HotpotQA / 2Wiki / MuSiQue items as contracts and runs the §11.1
+ladder; `python -m cglc.bench.report` prints the paired table with bootstrap CIs. The protocol,
+metrics and falsification criteria are frozen in [BENCHMARK.md](BENCHMARK.md) before any run. The
+harness never downloads data and spends nothing without `--yes`; `--estimate` prints the cost first.
+The measured results table does not exist yet; the defaults remain literature-backed, not measured.
 
 ## 6. Evaluation and falsification
 

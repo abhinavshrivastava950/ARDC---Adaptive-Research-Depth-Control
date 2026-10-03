@@ -14,7 +14,7 @@
 | Max rounds | `r_max` | `7` | MAP-Law | same |
 | Stop-RAG | `lambda decay, T` | `1.0->0.1 cosine, 10` | Stop-RAG | Llama-3.1-8B + DeBERTa-v3-large; +2.2..2.6 F1 |
 | Observation filter | `tau_len, tau_step, tau_loop` | `3000, 4-8, 3-5` | SupervisorAgent | GAIA/HumanEval/MBPP/GSM-Hard/AIME/DROP; GAIA 30.0->46.7% |
-| Execution temp | `T_gen, T_select` | `0.7, 0.0` | BATS | BrowseComp/ZH, HLE-Search, tau2-bench; flat ~14-16% |
+| Execution temp | `T_gen, T_select` | `0.7, 0.0` | BATS | BrowseComp/ZH, HLE-Search, tau2-bench; flat ~14-16%. **Logged only in LLM mode**: current Claude models reject `temperature`, so it is not sent |
 | V1 Psi init | `lambda_v, lambda_r, lambda_g, lambda_l` | `0.18, 0.14, 0.14, 0.10` | transparent init reusing origin magnitudes | **must be calibrated**; architecture fixes form, not values |
 | Delta map | `LOW/MEDIUM/HIGH` | `0 / 0.5 / 1` | V1 convention | fix before test |
 | Leases | `SHORT/STANDARD/EXTENDED` | `1 / 3 / 5` | Sec 5.6/10.2 | logged + tunable |

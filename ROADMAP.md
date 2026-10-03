@@ -5,7 +5,7 @@ starts until the item above has measurements.
 
 ## Now (no new architecture)
 
-1. **Real benchmark harness.** Wrap HotpotQA / 2WikiMultiHopQA / MuSiQue items as
+1. **Real benchmark harness.** *(Harness built, protocol frozen in BENCHMARK.md; no real results yet.)* Wrap HotpotQA / 2WikiMultiHopQA / MuSiQue items as
    `TaskContract`s (gold supporting facts → `H_evid`, question type → `H_proc`),
    run the §11.1 ladder, publish the results table. This is the single highest-value
    step: it turns literature-backed defaults into *measured* claims.

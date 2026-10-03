@@ -90,6 +90,34 @@ def decide(
     return "REPORT_BLOCKED", list(A_NT)
 
 
+def decide_rules(
+    gates: GateSnapshot,
+    needs_user: bool,
+    infeasible: bool,
+    weak_or_contested: bool = False,
+    stagnant: bool = False,
+    has_alternative: bool = False,
+    budget_alive: bool = True,
+) -> Tuple[str, List[str]]:
+    """Rule-only policy: the 'no action scoring' ablation (Sec 11.1).
+
+    Same terminal logic as ``decide``; the non-terminal choice is purely
+    ordinal (contested -> VERIFY, stalled with an alternative -> REDIRECT,
+    else CONTINUE) with no value-per-cost ranking.
+    """
+    if gates.allow:
+        return "ALLOW_FINALIZE", list(A_NT)
+    if needs_user:
+        return "ASK_USER", list(A_NT)
+    if infeasible or not budget_alive:
+        return "REPORT_BLOCKED", list(A_NT)
+    if weak_or_contested:
+        return "VERIFY", [a for a in A_NT if a != "VERIFY"]
+    if stagnant and has_alternative:
+        return "REDIRECT", [a for a in A_NT if a != "REDIRECT"]
+    return "CONTINUE", [a for a in A_NT if a != "CONTINUE"]
+
+
 def lease_category_for(decision: str, near_final: bool = False,
                        early_stage: bool = False) -> str:
     if decision == "VERIFY" or near_final:

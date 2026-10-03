@@ -25,6 +25,13 @@ class GateSnapshot:
         if self.reasons is None:
             self.reasons = []
 
+    def to_dict(self) -> dict:
+        """Per-gate booleans for the audit record (Sec 7.5)."""
+        return {"allow": self.allow, "reasons": list(self.reasons),
+                "C_terminal": self.C_terminal, "C_process": self.C_process,
+                "C_evidence": self.C_evidence, "C_answer": self.C_answer,
+                "C_blocker": self.C_blocker}
+
     @property
     def allow(self) -> bool:
         return bool(

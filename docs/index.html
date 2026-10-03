@@ -133,6 +133,7 @@
     .stat:last-child{border-bottom:none}
   }
 </style>
+<link rel="stylesheet" href="try.css">
 </head>
 <body>
 
@@ -149,13 +150,14 @@
     <div class="stat"><b>3 ≠ 1</b><span>done, stuck &amp; blocked kept separate</span></div>
   </div>
   <div class="cta-row">
-    <a href="#demo" style="text-decoration:none"><button class="tour">Watch the 2-minute tour</button></a>
+    <a href="#try" style="text-decoration:none"><button class="tour">Try it on your own document</button></a>
+    <a href="#demo" style="text-decoration:none"><button>Watch the 2-minute tour</button></a>
     <a href="#how" style="text-decoration:none"><button>Read how it works</button></a>
   </div>
 </header>
 
 <nav>
-  <a href="#problem">1 · Problem</a><a href="#idea">2 · Idea</a><a href="#how">3 · Method</a><a href="#demo">4 · Demo</a><a href="#numbers">5 · Parameters</a><a href="#proof">6 · Evaluation</a>
+  <a href="#problem">1 · Problem</a><a href="#idea">2 · Idea</a><a href="#how">3 · Method</a><a href="#try">4 · Try it</a><a href="#demo">5 · Simulator</a><a href="#numbers">6 · Parameters</a><a href="#proof">7 · Evaluation</a>
 </nav>
 
 <section id="problem" class="reveal">
@@ -194,10 +196,89 @@
   <div class="note">Stagnation trigger (CGDP): over <span class="mono">p</span> consecutive rounds, action similarity <span class="mono">J ≥ τ<sub>J</sub></span> with retrieval novelty <span class="mono">UPR ≤ τ<sub>U</sub></span> ends the lease and forces inspection. It establishes local stall — never global exhaustion, never completion. <span class="dim">→ <code>stagnation.py</code></span></div>
 </section>
 
+<section id="try" class="reveal">
+  <span class="kicker">4 · Try it</span>
+  <h2>Run it on your own document</h2>
+  <p class="lead">Paste or upload any text, ask a question, and watch the controller decide whether the answer is <i>actually</i> ready, or send the AI back to look again. Bring your own <b>Groq</b> or <b>Claude</b> key, or use <b>Offline</b> mode (no key, no AI) just to see the mechanics.</p>
+  <div class="note" id="t-offline-note" hidden><b>Live runs need the server.</b> This copy of the page is static. Open the hosted site, or run <code>python -m cglc.web</code> locally.</div>
+
+  <div class="t-wrap">
+    <div class="t-step">
+      <h3><span class="n">STEP 1</span>Choose the AI</h3>
+      <p class="hint">The worker model reads your documents and drafts the answer; a second call at each checkpoint judges it.</p>
+      <div class="t-seg" role="radiogroup" aria-label="AI provider">
+        <label><input type="radio" name="t-prov" value="groq" checked><span>Groq<small>any model, fast, free tier</small></span></label>
+        <label><input type="radio" name="t-prov" value="anthropic"><span>Claude<small>Anthropic key</small></span></label>
+        <label><input type="radio" name="t-prov" value="offline"><span>Offline<small>no key, no AI</small></span></label>
+      </div>
+      <div class="t-row">
+        <div class="t-field" id="t-keywrap"><label for="t-key">YOUR API KEY</label>
+          <input id="t-key" type="password" autocomplete="off" spellcheck="false" placeholder="gsk_…">
+          <p class="t-note"><span id="t-keyhelp"></span> Your key goes over HTTPS with the Run request, is used only for that run, and is never stored or logged. Use a key you can revoke.</p></div>
+        <div class="t-field" id="t-modelwrap"><label for="t-model">MODEL</label>
+          <input id="t-model" type="text" list="t-models" autocomplete="off" spellcheck="false">
+          <datalist id="t-models"></datalist>
+          <p class="t-note"><span id="t-modelhint"></span> <button type="button" id="t-load-models" style="padding:2px 9px">Load my models</button></p></div>
+      </div>
+    </div>
+
+    <div class="t-step">
+      <h3><span class="n">STEP 2</span>Add your documents</h3>
+      <p class="hint">Any text: .txt, .md, .csv, .json, .html or <b>.pdf</b> (read in your browser). Up to 20 files / 600,000 characters. Large inputs switch to retrieval (RAG) automatically.</p>
+      <div class="t-drop" id="t-drop">Drop files here or <label style="color:var(--accent-ink);cursor:pointer;text-decoration:underline">browse<input id="t-file" type="file" multiple accept=".txt,.md,.markdown,.csv,.json,.log,.html,.htm,.xml,.pdf,text/*,application/pdf" style="display:none"></label></div>
+      <div class="t-field" style="margin-top:10px"><label for="t-paste">…OR PASTE TEXT</label>
+        <textarea id="t-paste" placeholder="Paste a document here, then press “Add pasted text”."></textarea></div>
+      <div class="t-row"><button type="button" id="t-add-paste">Add pasted text</button>
+        <button type="button" id="t-clear">Remove all</button>
+        <span class="dim" style="font-size:13px">Or try a sample:</span>
+        <button type="button" data-sample="policy">Company policy (2 docs)</button>
+        <button type="button" data-sample="arch">3 architecture designs</button></div>
+      <p class="t-note" id="t-doc-count"></p>
+      <ul class="t-docs" id="t-docs"></ul>
+    </div>
+
+    <div class="t-step">
+      <h3><span class="n">STEP 3</span>Ask, and say what must be proven</h3>
+      <p class="hint">The controller will not approve an answer until every requirement below has a supporting quote.</p>
+      <div class="t-field"><label for="t-goal">YOUR QUESTION OR TASK</label>
+        <textarea id="t-goal" placeholder="e.g. Compare the two proposals and tell me which one has lower risk."></textarea></div>
+      <div class="t-field" style="margin-top:10px"><label for="t-obl">REQUIREMENTS: ONE PER LINE (OPTIONAL)</label>
+        <textarea id="t-obl" style="min-height:64px" placeholder="Leave empty for the default: every claim must be backed by a quote from the documents.&#10;Or add e.g. “The risk of each proposal is quoted from its own section.”"></textarea></div>
+      <label class="t-chk"><input type="checkbox" id="t-all"> Require evidence from every document <span class="dim">(a hard rule: the run cannot be approved until each file has been used)</span></label>
+      <details class="t-adv"><summary>Advanced</summary>
+        <div class="t-row">
+          <div class="t-field"><label for="t-depth">DEPTH</label><select id="t-depth"><option value="standard" selected>Standard (up to 14 steps)</option><option value="quick">Quick (up to 8 steps)</option></select></div>
+          <div class="t-field"><label for="t-mode">HOW THE AI READS</label><select id="t-mode"><option value="auto" selected>Auto (whole document if small, else retrieval)</option><option value="full">Whole documents in the prompt</option><option value="rag">Retrieval (RAG): top passages only</option></select></div>
+        </div></details>
+    </div>
+
+    <div class="t-run"><button type="button" class="primary" id="t-run">Run the controller</button><span id="t-status" role="status" aria-live="polite"></span></div>
+    <div class="t-err" id="t-error" hidden role="alert"></div>
+  </div>
+
+  <div id="t-result" hidden aria-live="polite"></div>
+
+  <details class="t-gloss"><summary>How to read the result: plain-English glossary</summary>
+    <dl>
+      <dt>Worker</dt><dd>The AI that does the research: it searches your documents, quotes them and drafts the answer.</dd>
+      <dt>Controller</dt><dd>A separate referee. It never writes the answer; it decides how long the worker may keep going and whether the result may be called done.</dd>
+      <dt>Lease</dt><dd>A short, bounded permission to work (1 to 5 steps) on one goal. When it runs out, the controller checks in.</dd>
+      <dt>Checkpoint</dt><dd>A moment where the controller inspects the work. It happens when the worker asks to finish, a lease ends, the worker starts repeating itself, sources conflict, or the budget gets tight, not after every step.</dd>
+      <dt>Gate</dt><dd>One of five yes/no checks that must <i>all</i> pass before an answer is approved. Failing any gate means “not yet”, however confident the answer sounds.</dd>
+      <dt>Evidence / receipt</dt><dd>A verbatim quote from your documents that backs a requirement. Quotes that do not really appear in the document are thrown away.</dd>
+      <dt>Stall</dt><dd>The worker keeps searching nearly the same thing and finds no new passages. That triggers a checkpoint; it does <i>not</i> mean the answer is done.</dd>
+      <dt>Continue / Verify / Redirect</dt><dd>The controller’s options when the answer is not ready: keep going; double-check a weak or disputed claim; or change approach because the current direction stopped paying off.</dd>
+      <dt>Approved vs. stopped</dt><dd>“Approved” means every gate passed. “Stopped” means the limits were hit first, and the draft is shown clearly marked as unapproved.</dd>
+      <dt>RAG mode</dt><dd>For big inputs the AI does not read everything at once. It writes a search query, a keyword search returns the best passages, and it reads only those.</dd>
+      <dt>Offline mode</dt><dd>No AI at all: keyword search plus simple rules. It exists only to show the controller’s behavior on your text.</dd>
+    </dl>
+  </details>
+</section>
+
 <section id="demo" class="reveal">
-  <span class="kicker">4 · Demonstration</span>
-  <h2>Run the controller yourself</h2>
-  <p class="lead"><b>Guided tour</b> narrates three scenes — stall, denied finish, full run. Or drive manually and move the thresholds to change the controller's behavior.</p>
+  <span class="kicker">5 · Simulator</span>
+  <h2>Poke the controller</h2>
+  <p class="lead">This simulator uses a fixed toy corpus so you can see every mechanism. <b>Guided tour</b> narrates three scenes — stall, denied finish, full run. Or drive manually and move the thresholds to change the controller's behavior.</p>
   <figure class="console">
     <figcaption><b>Figure 1.</b> CGLC console — leases, checkpoints, gates and audit, computed live in this page.</figcaption>
     <div class="demo-grid">
@@ -240,7 +321,7 @@
 </section>
 
 <section id="numbers" class="reveal">
-  <span class="kicker">5 · Parameters</span>
+  <span class="kicker">6 · Parameters</span>
   <h2>Literature-backed defaults</h2>
   <p class="lead">Each value is taken from the paper that reported it — a starting point, not an optimum. All are logged per run and ablated on held-out trajectories (§14.7).</p>
   <table class="params">
@@ -256,7 +337,7 @@
 </section>
 
 <section id="proof" class="reveal">
-  <span class="kicker">6 · Evaluation</span>
+  <span class="kicker">7 · Evaluation</span>
   <h2>Falsification criteria</h2>
   <p class="lead">The design is a hypothesis until measured. It fails if any of the following hold:</p>
   <ul>
@@ -266,12 +347,13 @@
     <li>REDIRECT decisions do not improve recovery over continued same-direction budget.</li>
   </ul>
   <p>Comparison ladder: uncontrolled worker → fixed-shallow / fixed-deep → generic prompt → fixed checkpoints → CGLC∖stall → CGLC∖scoring → <b>full CGLC</b>.
-  <span class="dim">→ <code>src/cglc/evaluate/</code> · <code>pytest -q</code>, 18 tests green.</span></p>
+  <span class="dim">→ <code>src/cglc/evaluate/</code> · <code>pytest -q</code>.</span></p>
 </section>
 
 <footer>ARDC — Adaptive Research Depth Control · CGLC worker v1 · architecture frozen, thresholds tunable ·
 <a href="https://github.com/abhinavshrivastava950/ARDC---Adaptive-Research-Depth-Control">GitHub repository</a></footer>
 
+<script src="try.js" defer></script>
 <script>
 "use strict";
 /* Core equations mirror src/cglc/*.py (Sec 14 normative). Narration is plain-English. */

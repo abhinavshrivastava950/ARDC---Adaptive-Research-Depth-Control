@@ -1,0 +1,29 @@
+[
+  {
+    "_id": "hp1",
+    "question": "In which country is the city where the Eiffel Tower stands?",
+    "answer": "France",
+    "type": "bridge",
+    "level": "hard",
+    "supporting_facts": [["Eiffel Tower", 0], ["Paris", 0]],
+    "context": [
+      ["Eiffel Tower", ["The Eiffel Tower is a wrought-iron tower located in Paris.", "It was completed in 1889."]],
+      ["Paris", ["Paris is the capital and most populous city of France."]],
+      ["Berlin", ["Berlin is the capital of Germany.", "It has about 3.7 million inhabitants."]],
+      ["Tower #2 \"Bridge\"", ["A distractor paragraph about another tower in Tokyo."]]
+    ]
+  },
+  {
+    "_id": "hp2",
+    "question": "Who is older, Ada or Bob?",
+    "answer": "Ada",
+    "type": "comparison",
+    "level": "hard",
+    "supporting_facts": [["Ada", 0], ["Bob", 0]],
+    "context": [
+      ["Ada", ["Ada was born in 1815."]],
+      ["Bob", ["Bob was born in 1900."]],
+      ["Cleo", ["Cleo was born in 1950."]]
+    ]
+  }
+]

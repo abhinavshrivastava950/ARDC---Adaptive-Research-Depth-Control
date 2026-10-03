@@ -1,0 +1,15 @@
+{
+  "outputDirectory": "demo",
+  "functions": {
+    "api/*.py": { "maxDuration": 60, "includeFiles": "src/**" }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    }
+  ]
+}

@@ -26,11 +26,16 @@ class WorkerAdapter(DocumentWorker):
             txt, _cut = truncate_observation(o.text, self.tau_len)
             o.text = txt
             chunks.append(o.chunk_id)
-        action_text = f"{intent} :: {' | '.join(target_gaps)}"
+        # A worker may report its own query as the action fingerprint (J_t)
+        # and a call-level cost that must be charged even with zero cites.
+        action_text = (res.detail.get("action_text")
+                       or f"{intent} :: {' | '.join(target_gaps)}")
         tot = {"tool_calls": 0.0, "tokens": 0.0, "wall_clock": 0.0}
         for o in res.observations:
             for k, v in o.cost.items():
                 tot[k] = tot.get(k, 0.0) + v
+        for k, v in (res.detail.get("cost") or {}).items():
+            tot[k] = tot.get(k, 0.0) + v
         self.trace.log(
             "WORK",
             action_text,
@@ -39,7 +44,8 @@ class WorkerAdapter(DocumentWorker):
             cost=tot,
             status="final_proposal" if res.propose_final else "ok",
             detail={"intent": intent, "blocker": res.blocker,
-                    "contradiction": res.contradiction},
+                    "contradiction": res.contradiction,
+                    "cited_docs": res.detail.get("cited_docs", [])},
         )
         return res
 

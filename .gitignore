@@ -5,3 +5,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# benchmark data and results (large / reproducible from the harness)
+data/
+results/

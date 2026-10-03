@@ -20,7 +20,7 @@ from . import scoring as S
 from .audit import DecisionRecord
 from .config import CGLCConfig, DEFAULT_CONFIG
 from .contracts import TaskContract
-from .controller import rank_actions, decide, lease_category_for
+from .controller import rank_actions, decide, decide_rules, lease_category_for
 from .gates import GateSnapshot, evaluate_finalization, FinalizationAuthorizer
 from .guards import schedule_checkpoint
 from .ledger import EvidenceLedger, EvidenceReceipt
@@ -98,12 +98,32 @@ class Runner:
     def __init__(self, cfg: CGLCConfig = DEFAULT_CONFIG,
                  judge: JudgeFn = rule_judge,
                  max_checkpoints: int = 12,
-                 overhead_fraction: float = 0.25) -> None:
+                 overhead_fraction: float = 0.25,
+                 harvest_receipts: bool = True,
+                 policy: str = "ranked",
+                 fixed_lease: Optional[int] = None) -> None:
+        # policy: "ranked" = value-per-cost ranking (full CGLC); "rules" =
+        # ordinal rules only (the 'no action scoring' ablation, Sec 11.1).
+        # fixed_lease: force every lease to this many actions (fixed-interval
+        # checkpoints; 1 = always-on judge upper bound).
+        if policy not in ("ranked", "rules"):
+            raise ValueError(f"unknown policy {policy!r}")
+        self.policy = policy
+        self.fixed_lease = fixed_lease
         self.cfg = cfg
         self.judge = judge
+        # Keyword receipt harvesting is the rule-judge V1 shortcut. An LLM
+        # judge cites its own receipts, so it should run with this off.
+        self.harvest_receipts = harvest_receipts
         self.max_checkpoints = max_checkpoints
         self.overhead_fraction = overhead_fraction
         self.authorizer = FinalizationAuthorizer()
+
+    def _lease(self, intent: str, category: str, gaps) -> Lease:
+        lease = Lease.make(intent, category, gaps)
+        if self.fixed_lease:
+            lease.action_cap = int(self.fixed_lease)
+        return lease
 
     def remaining(self, trace: Trace) -> Dict[str, float]:
         lim = self.cfg.limits.as_dict()
@@ -134,8 +154,8 @@ class Runner:
             self.cfg.stagnation.p, self.cfg.stagnation.recent_window)
         guard = OverheadGuard(fraction=self.overhead_fraction,
                               l_max=self.cfg.lease.L_max)
-        lease = Lease.make("CONTINUE", "STANDARD",
-                           [o.obligation_id for o in contract.evidence_obligations])
+        lease = self._lease("CONTINUE", "STANDARD",
+                            [o.obligation_id for o in contract.evidence_obligations])
         draft = draft0
         records: List[DecisionRecord] = []
         ckpt = 0
@@ -164,7 +184,7 @@ class Runner:
                     stalled_now = False
                 # naive receipt harvesting: any observation mentioning an
                 # obligation proposition counts as weak PARTIAL support.
-                for o in res.observations:
+                for o in (res.observations if self.harvest_receipts else []):
                     for obl in contract.evidence_obligations:
                         keys = [w for w in obl.proposition.lower().split() if len(w) > 4]
                         if any(k in o.text.lower() for k in keys[:4]):
@@ -206,18 +226,22 @@ class Runner:
             if not ev.run:
                 # No mandatory event: extend current direction with a fresh
                 # STANDARD lease (periodic inspection stays a safety net).
-                lease = Lease.make(lease.intent, "STANDARD", lease.target_gap_ids)
+                lease = self._lease(lease.intent, "STANDARD", lease.target_gap_ids)
                 continue
 
             # --- checkpoint packet S_t + semantic judgment ---
             ckpt += 1
             silence = 0
-            controller_tokens += 500.0
             # §7.4: downgrade checkpoint frequency on excess overhead,
             # while mandatory finalization interception is retained.
+            j = self.judge(contract, ledger, draft)
+            # Measured controller tokens when the judge reports them (LLM
+            # judge); otherwise the V1 flat estimate.
+            ctrl_cost = getattr(self.judge, "last_tokens", None)
+            ctrl_cost = 500.0 if ctrl_cost is None else float(ctrl_cost)
+            controller_tokens += ctrl_cost
             downgraded = guard.observe(
                 controller_tokens, trace.consumed().get("tokens", 0.0))
-            j = self.judge(contract, ledger, draft)
             if process_check is not None:
                 proc_done, unmet = process_check()
             elif contract.process_duties:
@@ -237,9 +261,16 @@ class Runner:
             ranked = rank_actions(j.action_features, self.cfg, rho, rem,
                                   ["CONTINUE", "VERIFY", "REDIRECT"],
                                   contract.blockers)
-            decision, rejected = decide(
-                gates, j.needs_user, j.infeasible, ranked,
-                weak_or_contested=j.weak_or_contested or contradiction,
+            if self.policy == "rules":
+                decision, rejected = decide_rules(
+                    gates, j.needs_user, j.infeasible,
+                    weak_or_contested=j.weak_or_contested or contradiction,
+                    stagnant=stag.stagnated(), has_alternative=j.has_alternative,
+                    budget_alive=all(v > 0 for v in rem.values()))
+            else:
+                decision, rejected = decide(
+                    gates, j.needs_user, j.infeasible, ranked,
+                    weak_or_contested=j.weak_or_contested or contradiction,
                 stagnant=stag.stagnated(), has_alternative=j.has_alternative)
 
             note = j.rationale
@@ -261,10 +292,10 @@ class Runner:
                     contract_rev=contract.revision,
                     lease_id=lease.lease_id, trigger_reasons=ev.reasons,
                     receipt_ids=list(j.receipt_ids),
-                    gates={"allow": gates.allow, "reasons": gates.reasons},
+                    gates=gates.to_dict(),
                     decision=decision, rejected=rejected,
-                    remaining_budget=dict(rem),
-                    controller_cost={"tokens": 500.0},
+                    remaining_budget=dict(rem), trace_len=len(trace.events),
+                    controller_cost={"tokens": ctrl_cost},
                     note=note,
                     selected_lease_id=None,
                     contract_snapshot=(auth.certificate or {}).get("contract"),
@@ -277,16 +308,16 @@ class Runner:
             gaps = [f"duty:{u}" for u in unmet] + (j.open_gaps or
                     [o.obligation_id for o in contract.evidence_obligations])
             ran_under = lease.lease_id
-            lease = Lease.make(decision, cat, gaps)
+            lease = self._lease(decision, cat, gaps)
             records.append(DecisionRecord(
                 checkpoint_id=ckpt, contract_id=contract.contract_id,
                 contract_rev=contract.revision,
                 lease_id=ran_under, trigger_reasons=ev.reasons,
                 receipt_ids=list(j.receipt_ids),
-                gates={"allow": gates.allow, "reasons": gates.reasons},
+                gates=gates.to_dict(),
                 decision=decision, rejected=rejected,
-                remaining_budget=dict(rem),
-                controller_cost={"tokens": 500.0},
+                remaining_budget=dict(rem), trace_len=len(trace.events),
+                controller_cost={"tokens": ctrl_cost},
                 note=note,
                 selected_lease_id=lease.lease_id))
 
