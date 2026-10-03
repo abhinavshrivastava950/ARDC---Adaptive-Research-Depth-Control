@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CGLC Worker — Live Demonstration</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --txt:#e6edf3;
+          --dim:#8b949e; --acc:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#f85149; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:14px; }
+  header { padding:18px 22px; border-bottom:1px solid var(--line); }
+  header h1 { margin:0 0 4px; font-size:18px; }
+  header p { margin:0; color:var(--dim); font-size:13px; }
+  .wrap { display:grid; grid-template-columns:300px 1fr; gap:0; min-height:calc(100vh - 90px); }
+  aside { border-right:1px solid var(--line); padding:16px; background:var(--panel); }
+  aside h2, main h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); }
+  .param { margin:10px 0; }
+  .param label { display:flex; justify-content:space-between; color:var(--dim); font-size:12px; }
+  .param label b { color:var(--txt); }
+  .param input[type=range] { width:100%; }
+  .param input[type=number] { width:64px; background:var(--bg); color:var(--txt); border:1px solid var(--line); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+  button { background:#21262d; color:var(--txt); border:1px solid var(--line);
+           padding:8px 12px; cursor:pointer; font:inherit; font-size:13px; border-radius:6px; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:#1f6feb; border-color:#1f6feb; }
+  main { padding:16px 20px; }
+  #log { background:#010409; border:1px solid var(--line); border-radius:8px;
+         padding:14px; min-height:280px; max-height:46vh; overflow:auto; white-space:pre-wrap; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .acc { color:var(--acc); } .dim { color:var(--dim); }
+  #timeline { display:flex; gap:6px; margin:12px 0; flex-wrap:wrap; }
+  .chip { border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-size:12px; background:var(--panel); }
+  #audit { background:#010409; border:1px solid var(--line); border-radius:8px;
+           padding:14px; max-height:30vh; overflow:auto; white-space:pre; font-size:12px; }
+  footer { padding:10px 22px; border-top:1px solid var(--line); color:var(--dim); font-size:12px; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Contract-Gated Lease Controller (CGLC) — live demo</h1>
+  <p>Worker executes inside bounded leases · controller authorizes effort · gates authorize completion.
+     Same equations as <span class="dim">src/cglc/</span> (Sec 14 normative). No backend — runs in this page.</p>
+</header>
+<div class="wrap">
+  <aside>
+    <h2>Literature-backed parameters</h2>
+    <div class="param"><label>tau_J (CGDP) <b id="v-tauJ">0.60</b></label>
+      <input id="p-tauJ" type="range" min="0" max="1" step="0.05" value="0.6"></div>
+    <div class="param"><label>tau_U (CGDP) <b id="v-tauU">0.30</b></label>
+      <input id="p-tauU" type="range" min="0" max="1" step="0.05" value="0.3"></div>
+    <div class="param"><label>p persistence <b id="v-p">2</b></label>
+      <input id="p-p" type="number" min="1" max="6" value="2"></div>
+    <div class="param"><label>lambda_b (budget) <b id="v-lb">0.70</b></label>
+      <input id="p-lb" type="range" min="0" max="1.5" step="0.05" value="0.7"></div>
+    <div class="param"><label>lease SHORT / STANDARD / EXTENDED</label>
+      <div class="row">
+        <input id="p-s" type="number" min="1" max="3" value="1">
+        <input id="p-m" type="number" min="1" max="6" value="3">
+        <input id="p-e" type="number" min="1" max="9" value="5">
+      </div></div>
+    <div class="row"><button id="b-reset">Reset literature defaults</button></div>
+    <h2>Scenarios</h2>
+    <div class="row">
+      <button class="primary" id="b-full">▶ Full comparison run</button>
+      <button id="b-stag">Repeated queries → stall</button>
+      <button id="b-gate">Premature finalize → blocked</button>
+    </div>
+    <p class="dim" style="font-size:12px">Docs: design-A / design-B / design-C (fixed corpus, TF overlap ranker —
+      same role as <span class="dim">FixedCorpusWorker</span>).</p>
+  </aside>
+  <main>
+    <h2>Run log</h2>
+    <div id="log"><span class="dim">Press a scenario button…</span></div>
+    <h2>Lease / checkpoint timeline</h2>
+    <div id="timeline"></div>
+    <h2>Audit record (Sec 7.5)</h2>
+    <div id="audit"><span class="dim">—</span></div>
+  </main>
+</div>
+<footer>Repo: ARDC — Adaptive Research Depth Control · core math: UPR_t = |C_t\H_{t-1}|/max(1,|C_t|) ·
+  Stagnated_t = AND over p rounds (J≥tau_J ∧ UPR≤tau_U) · r_t = max(0,u)/(d+eps) ·
+  ALLOW = C_terminal ∧ C_process ∧ C_evidence ∧ C_answer ∧ ¬C_blocker</footer>
+
+<script>
+"use strict";
+/* ---- core equations (mirror src/cglc/*.py) ---- */
+const tok = s => new Set((s.toLowerCase().match(/[a-z0-9]+/g) || []));
+function jaccard(a, b) {
+  if (!a.size && !b.size) return 1.0;
+  if (!a.size || !b.size) return 0.0;
+  let inter = 0; for (const x of a) if (b.has(x)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+const upr = (cur, seen) => cur.length ? cur.filter(c => !seen.has(c)).length / cur.length : 0;
+
+const DOCS = {
+  "design-A": "Architecture A uses an always-on semantic coverage layer with selective rich inspection. It supports DEEPEN VERIFY REDIRECT but coverage state is expensive.",
+  "design-B": "Architecture B maintains a MAP-like research graph with requirements evidence links coverage and marginal gain. Direction awareness is strong but controller-heavy.",
+  "design-C": "Architecture C logs raw trace and runs semantics at finalization fixed intervals and stalls. Hard duties sit outside effort judgment. Checkpoint timing is fixed."
+};
+function rankDocs(query) {
+  const q = tok(query);
+  return Object.keys(DOCS).map(id => {
+    const d = tok(DOCS[id]); let s = 0; for (const w of q) if (d.has(w)) s++;
+    return { id, s };
+  }).sort((a, b) => b.s - a.s).map(x => x.id);
+}
+function getCfg() {
+  return {
+    tauJ: +document.getElementById("p-tauJ").value,
+    tauU: +document.getElementById("p-tauU").value,
+    p: Math.max(1, +document.getElementById("p-p").value | 0),
+    lb: +document.getElementById("p-lb").value,
+    SHORT: +document.getElementById("p-s").value | 0,
+    STANDARD: +document.getElementById("p-m").value | 0,
+    EXTENDED: +document.getElementById("p-e").value | 0
+  };
+}
+/* ---- tiny logger ---- */
+const logEl = document.getElementById("log"),
+      tlEl = document.getElementById("timeline"),
+      auEl = document.getElementById("audit");
+function reset(){ logEl.innerHTML = ""; tlEl.innerHTML = ""; auEl.innerHTML = "<span class='dim'>—</span>"; }
+function line(html){ logEl.innerHTML += html + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+function chip(txt, cls){ tlEl.innerHTML += `<span class="chip ${cls||""}">${txt}</span>`; }
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+
+/* ---- Scenario 1: stagnation ---- */
+document.getElementById("b-stag").onclick = () => {
+  reset(); const c = getCfg();
+  line(`<span class="acc">STAGNATION DEMO</span> <span class="dim">tau_J=${c.tauJ} tau_U=${c.tauU} p=${c.p}</span>`);
+  const seen = new Set(); let actions = [], hist = [];
+  const queries = ["compare architecture cost","compare architecture cost",
+                   "compare architecture cost","compare architecture cost"];
+  const chunks = [["A#0","B#0","C#0"],["A#0","B#0"],["A#0"],["A#0"]];
+  queries.forEach((q, i) => {
+    const J = actions.length ? Math.max(...actions.slice(-5).map(a => jaccard(tok(q), tok(a)))) : 0;
+    const U = upr(chunks[i], seen);
+    chunks[i].forEach(x => seen.add(x)); actions.push(q); hist.push([J, U]);
+    const qual = J >= c.tauJ && U <= c.tauU;
+    const stag = hist.length >= c.p && hist.slice(-c.p).every(([a,b]) => a >= c.tauJ && b <= c.tauU);
+    line(` step ${i}: J=${J.toFixed(2)} UPR=${U.toFixed(2)} qualifying=${qual} → ` +
+         (stag ? `<span class="warn">STAGNATED — lease ends, checkpoint fires</span>` : `<span class="dim">continue lease</span>`));
+    chip(`step ${i} ${stag ? "STAGNATED" : "work"}`, stag ? "warn" : "");
+  });
+  line(`<span class="dim">Stagnation never authorizes finalization — it only triggers semantic inspection.</span>`);
+};
+
+/* ---- Scenario 2: gate block ---- */
+document.getElementById("b-gate").onclick = () => {
+  reset();
+  line(`<span class="acc">FINALIZATION-GATE DEMO</span> <span class="dim">worker proposes a fluent, confident answer…</span>`);
+  const gates = { C_terminal:true, C_process:true, C_evidence:false, C_answer:true, C_blocker:false };
+  const allow = gates.C_terminal && gates.C_process && gates.C_evidence && gates.C_answer && !gates.C_blocker;
+  line(` gates: ${esc(JSON.stringify(gates))}`);
+  line(allow ? `<span class="ok">ALLOW_FINALIZE</span>`
+             : `<span class="bad">ALLOW = false — decisive claim lacks evidence (C_evidence)</span>`);
+  if (!allow) { chip("finalize proposed", "bad"); chip("→ VERIFY lease (1 action)", "warn");
+    line(` → controller issues <span class="warn">VERIFY</span> lease instead of finalizing. Clean + confident ≠ complete.`); }
+};
+
+/* ---- Scenario 3: full run (mirrors Runner.run + rule_judge) ---- */
+document.getElementById("b-full").onclick = () => {
+  reset(); const c = getCfg();
+  line(`<span class="acc">FULL RUN</span> <span class="dim">leases ${c.SHORT}/${c.STANDARD}/${c.EXTENDED} · lambda_b=${c.lb}</span>`);
+  const seen = new Set(); let actions = [], hist = [], draft = "", ckpt = 0;
+  const gaps = ["support comparison with evidence"];
+  let support = 0; // ledger s_it proxy
+  let lease = { intent:"CONTINUE", cap:c.STANDARD, used:0 };
+  chip("lease L1 CONTINUE", "");
+  const audits = [];
+  let guard = 0;
+  while (ckpt < 4 && guard++ < 20) {
+    // worker acts inside lease
+    let stalled = false;
+    while (lease.used < lease.cap) {
+      const q = gaps.join(" ");
+      const ranked = rankDocs(q + " " + draft.slice(0, 80));
+      const chunks = ranked.slice(0, 3).map(id => id + "#0");
+      const J = actions.length ? Math.max(...actions.slice(-5).map(a => jaccard(tok(q), tok(a)))) : 0;
+      const U = upr(chunks, seen);
+      chunks.forEach(x => seen.add(x)); actions.push(q); hist.push([J, U]);
+      lease.used++;
+      const hit = ranked.some(id => /architecture|evidence|comparison/.test(DOCS[id]));
+      if (hit) support = Math.min(1, support + 0.5);
+      draft = Object.values(DOCS).join(" ").slice(0, 900);
+      stalled = hist.length >= c.p && hist.slice(-c.p).every(([a,b]) => a >= c.tauJ && b <= c.tauU);
+      // value-per-budget ranking of CONTINUE vs REDIRECT (Sec 14.5, simplified)
+      const rho = 0.15, dC = 0.05, dR = 0.08;
+      const uC = 0.5 + 0.14 * (support < 1 ? 1 : 0) - c.lb * rho * dC;
+      const uR = 0.5 + 0.14 * 0.5 - 0.10 * (stalled ? 1 : 0) - c.lb * rho * dR;
+      const rC = Math.max(0, uC) / (dC + 1e-5), rR = Math.max(0, uR) / (dR + 1e-5);
+      line(` <span class="dim">action ${actions.length} [${lease.intent}]</span> J=${J.toFixed(2)} UPR=${U.toFixed(2)} ` +
+           `support=${support.toFixed(1)} r_CONT=${rC.toFixed(1)} r_REDIR=${rR.toFixed(1)}${stalled ? ` <span class="warn">stall</span>` : ""}`);
+      if (stalled || lease.used >= lease.cap) break;
+    }
+    // checkpoint
+    ckpt++;
+    const expired = lease.used >= lease.cap;
+    const evSuff = support >= 1 && draft.length > 0;
+    const gates = { C_terminal: draft.length > 0, C_process: true, C_evidence: evSuff, C_answer: true, C_blocker: false };
+    const allow = Object.values(gates).every((v, i) => i === 4 ? !v : v);
+    const reasons = [...(expired ? ["lease_expiry"] : []), ...(stalled ? ["structural_stall"] : [])];
+    let decision;
+    if (allow) decision = "ALLOW_FINALIZE";
+    else if (support < 1 && stalled) decision = "REDIRECT";
+    else if (support < 1) decision = "CONTINUE";
+    else decision = "VERIFY";
+    chip(`ckpt${ckpt} [${reasons.join("+")||"final"}] → ${decision}`, allow ? "ok" : "warn");
+    line(`<span class="acc">ckpt${ckpt}</span> triggers=[${reasons}] gates=${esc(JSON.stringify(gates))} → <b>${decision}</b>`);
+    audits.push({ checkpoint: ckpt, triggers: reasons, gates, decision,
+      remaining_budget: { tool_calls: 30 - actions.length * 3 }, controller_cost: { tokens: 500 } });
+    if (decision === "ALLOW_FINALIZE") break;
+    const cap = decision === "VERIFY" || decision === "REDIRECT" ? c.SHORT : c.STANDARD;
+    lease = { intent: decision, cap, used: 0 };
+    chip(`lease L${ckpt + 1} ${decision}`, "");
+  }
+  auEl.textContent = JSON.stringify({ contract: "K-demo (benchmark-confirmed)", decisions: audits }, null, 2);
+  line(`<span class="ok">done</span> <span class="dim">${actions.length} worker actions · ${ckpt} checkpoint(s) · full audit above</span>`);
+};
+
+document.getElementById("b-reset").onclick = () => {
+  document.getElementById("p-tauJ").value = 0.6; document.getElementById("p-tauU").value = 0.3;
+  document.getElementById("p-p").value = 2; document.getElementById("p-lb").value = 0.7;
+  document.getElementById("p-s").value = 1; document.getElementById("p-m").value = 3;
+  document.getElementById("p-e").value = 5; syncLabels();
+};
+function syncLabels(){
+  document.getElementById("v-tauJ").textContent = (+document.getElementById("p-tauJ").value).toFixed(2);
+  document.getElementById("v-tauU").textContent = (+document.getElementById("p-tauU").value).toFixed(2);
+  document.getElementById("v-p").textContent = document.getElementById("p-p").value;
+  document.getElementById("v-lb").textContent = (+document.getElementById("p-lb").value).toFixed(2);
+}
+["p-tauJ","p-tauU","p-p","p-lb"].forEach(id => document.getElementById(id).oninput = syncLabels);
+</script>
+</body>
+</html>

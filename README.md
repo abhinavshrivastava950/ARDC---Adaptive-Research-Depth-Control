@@ -1,5 +1,11 @@
 # CGLC Worker — Contract-Gated Lease Controller (V1)
 
+**Live demo:** open `demo/index.html` in a browser (or `docs/index.html` via
+GitHub Pages once enabled in repo Settings → Pages → Deploy from `main`/`docs`).
+No backend — the full run executes in the page.
+
+![CGLC live demo — full comparison run](demo/screenshot.png)
+
 Architecture baseline: `Adaptive_Research_Depth_Final_Architecture_Corrected.docx`
 (frozen 27 Aug 2026). This repo implements the **worker + external controller
 loop**; thresholds stay tunable. See `ARCHITECTURE.md` (design mapping),
