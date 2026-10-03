@@ -4,6 +4,9 @@
 GitHub Pages once enabled in repo Settings → Pages → Deploy from `main`/`docs`).
 No backend — the full run executes in the page.
 
+**Video tour (20 s):** [`demo/demo-tour.mp4`](demo/demo-tour.mp4) — scrolls the
+story, runs the guided tour (stall → denied finish → full run) in a real browser.
+
 ![CGLC live demo — full comparison run](demo/screenshot.png)
 
 Architecture baseline: `Adaptive_Research_Depth_Final_Architecture_Corrected.docx`
