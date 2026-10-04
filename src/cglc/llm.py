@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
@@ -116,7 +117,7 @@ class AnthropicClient:
         self._anthropic = anthropic
         try:
             # api_key=None -> SDK resolves ANTHROPIC_API_KEY / auth profile.
-            self._client = anthropic.Anthropic(api_key=api_key)
+            self._client = anthropic.Anthropic(api_key=clean_api_key(api_key))
         except Exception as e:
             raise LLMConfigError(_BYOK_HINT) from e
 
@@ -194,6 +195,31 @@ class AnthropicClient:
             if isinstance(e, a.APIStatusError):
                 return LLMError(f"API error {e.status_code}: {getattr(e, 'message', e)}")
         return LLMError(f"{type(e).__name__}: {e}")
+
+
+# whitespace plus zero-width / bidi-control / BOM characters that copy-paste drags in
+_HIDDEN = re.compile("[" + r"\s" + "".join(map(chr, (*range(0x200B, 0x2010), *range(0x202A, 0x202F), 0x2060, 0xFEFF))) + "]")
+
+
+def clean_api_key(raw: Optional[str]) -> Optional[str]:
+    """Normalize a pasted API key.
+
+    Copy-paste often drags in invisible characters (zero-width spaces, BOMs, a
+    trailing newline). Those are removed. If anything non-ASCII remains (curly
+    dashes, a masked key made of bullet characters), fail with a clear message
+    instead of letting the HTTP layer raise a cryptic UnicodeEncodeError.
+    """
+    if raw is None:
+        return None
+    k = _HIDDEN.sub("", str(raw))
+    if not k:
+        return None
+    if not k.isascii():
+        raise LLMConfigError(
+            "Your API key contains a character that is not plain ASCII (often from copying a "
+            "masked or formatted key). Copy it again from the provider's console and paste it "
+            "with nothing before or after it.")
+    return k
 
 
 def extract_json(text: str) -> Dict[str, Any]:

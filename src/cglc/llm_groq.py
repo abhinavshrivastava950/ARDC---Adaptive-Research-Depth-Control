@@ -15,8 +15,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .llm import (LLMConfigError, LLMError, LLMReply, LLMUsage, extract_json,
-                  validate_schema)
+from .llm import (LLMConfigError, LLMError, LLMReply, LLMUsage, clean_api_key,
+                  extract_json, validate_schema)
 
 GROQ_BASE = "https://api.groq.com/openai/v1"
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
@@ -80,7 +80,7 @@ class GroqClient:
                  max_rate_retries: int = 3, max_wait: float = 10.0,
                  pace: bool = True, clock: Callable[[], float] = time.time,
                  reasoning_effort: Optional[str] = "auto") -> None:
-        key = api_key or os.environ.get(GROQ_KEY_ENV)
+        key = clean_api_key(api_key or os.environ.get(GROQ_KEY_ENV))
         if not key:
             raise LLMConfigError(_HINT)
         self.model = model or os.environ.get("CGLC_MODEL") or DEFAULT_GROQ_MODEL
@@ -280,6 +280,7 @@ class GroqClient:
 def list_groq_models(api_key: str, http: Optional[HttpFn] = None,
                      timeout: float = 20.0) -> List[str]:
     """Chat-capable model ids visible to this key (for the UI dropdown)."""
+    api_key = clean_api_key(api_key)
     if not api_key:
         raise LLMConfigError(_HINT)
     status, _h, text = (http or _urllib_http)(

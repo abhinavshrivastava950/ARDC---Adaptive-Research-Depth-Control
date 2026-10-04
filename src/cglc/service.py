@@ -14,14 +14,16 @@ import dataclasses
 import json
 import os
 import re
+import sys
 import time
+import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 from .config import BudgetLimits, DEFAULT_CONFIG
 from .contracts import TaskContract
 from .judge import LLMJudge
 from .ledger import EvidenceLedger
-from .llm import LLMConfigError, LLMError, make_llm
+from .llm import LLMConfigError, LLMError, clean_api_key, make_llm
 from .llm_groq import DEFAULT_GROQ_MODEL, list_groq_models
 from .runner import Judgment, Runner, rule_judge
 from .trace import Trace
@@ -117,7 +119,7 @@ def _clean_request(req: Dict[str, Any]) -> Dict[str, Any]:
     return dict(provider=provider, goal=goal, model=model, obligations=obl,
                 depth=depth, mode=mode, docs=_clean_docs(req.get("documents")),
                 require_all_docs=bool(req.get("require_all_docs")),
-                api_key=str(req.get("api_key") or "").strip() or None)
+                api_key=clean_api_key(req.get("api_key")))
 
 
 # -- deadline wrappers (hosted functions have a hard wall-clock cap) -----------
@@ -328,6 +330,18 @@ def _parse(raw: bytes) -> Dict[str, Any]:
     return d
 
 
+def _unexpected(e: Exception, key: Optional[str]) -> Tuple[int, Dict[str, Any]]:
+    """500 for a bug: log a key-scrubbed traceback (visible in the host's logs) and
+    tell the user the exception type and where, never its message."""
+    try:
+        sys.stderr.write(scrub("".join(traceback.format_exception(e)), key) + "\n")
+        where = traceback.extract_tb(e.__traceback__)[-1].name
+    except Exception:
+        where = "unknown"
+    return _fail(500, "server", f"Unexpected error ({type(e).__name__} in {where}). "
+                                "If this repeats, please report it.", key)
+
+
 def handle_run(raw: bytes, **kw) -> Tuple[int, Dict[str, Any]]:
     key = None
     try:
@@ -341,7 +355,7 @@ def handle_run(raw: bytes, **kw) -> Tuple[int, Dict[str, Any]]:
     except LLMError as e:
         return _fail(502, "llm", str(e), key)
     except Exception as e:  # never leak internals or the key
-        return _fail(500, "server", f"Unexpected error ({type(e).__name__}).", key)
+        return _unexpected(e, key)
 
 
 def handle_models(raw: bytes) -> Tuple[int, Dict[str, Any]]:
@@ -365,7 +379,7 @@ def handle_models(raw: bytes) -> Tuple[int, Dict[str, Any]]:
     except LLMError as e:
         return _fail(502, "llm", str(e), key)
     except Exception as e:
-        return _fail(500, "server", f"Unexpected error ({type(e).__name__}).", key)
+        return _unexpected(e, key)
 
 
 def handle_health() -> Tuple[int, Dict[str, Any]]:

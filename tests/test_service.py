@@ -351,3 +351,45 @@ def test_rag_reads_each_documents_opening_on_the_first_step_and_overviews_work()
     idx = BM25Index({"big": "Overview: Acme is a payments platform.\n\n" + "\n\n".join(
         f"Section {i}: Acme acme acme detail {i}." for i in range(30))})
     assert idx.openings(per_doc=1)[0].chunk_id == "big#c0"
+
+
+ZW, DASH, BOM = chr(0x200B), chr(0x2013), chr(0xFEFF)
+GOOD_KEY = "gsk_" + "a" * 52
+
+
+def test_hidden_characters_in_a_pasted_key_are_removed_not_fatal():
+    from cglc.llm import clean_api_key
+    assert clean_api_key(f"  {GOOD_KEY[:10]}{ZW}{GOOD_KEY[10:]}{BOM}\n") == GOOD_KEY
+    assert clean_api_key("   ") is None and clean_api_key(None) is None
+
+
+def test_non_ascii_key_gives_a_clear_error_instead_of_unicodeencodeerror():
+    bad = GOOD_KEY[:10] + DASH + GOOD_KEY[10:]
+    body = {"provider": "groq", "api_key": bad, "goal": "q?", "documents": DOCS}
+    status, out = service.handle_run(json.dumps(body).encode())
+    assert status == 400 and out["kind"] == "config"
+    assert "not plain ASCII" in out["error"] and "Unicode" not in out["error"]
+    status, out = service.handle_models(json.dumps({"provider": "groq", "api_key": bad}).encode())
+    assert status == 400 and "not plain ASCII" in out["error"]
+
+
+def test_key_with_zero_width_space_reaches_the_provider_cleaned():
+    seen = {}
+
+    def factory(provider, api_key=None, model=None, **kw):
+        seen["key"] = api_key
+        raise LLMConfigError("stop here")           # we only care what key arrived
+    body = {"provider": "groq", "api_key": GOOD_KEY[:8] + ZW + GOOD_KEY[8:], "goal": "q?",
+            "documents": DOCS}
+    service.handle_run(json.dumps(body).encode(), llm_factory=factory)
+    assert seen["key"] == GOOD_KEY
+
+
+def test_unexpected_errors_name_the_function_and_log_a_scrubbed_traceback(capsys):
+    def boom(*a, **k):
+        raise RuntimeError(f"secret {GOOD_KEY} leaked in message")
+    body = {"provider": "groq", "api_key": GOOD_KEY, "goal": "q?", "documents": DOCS}
+    status, out = service.handle_run(json.dumps(body).encode(), llm_factory=boom)
+    err = capsys.readouterr().err
+    assert status == 500 and "RuntimeError in boom" in out["error"]
+    assert GOOD_KEY not in err and GOOD_KEY not in json.dumps(out) and "leaked in message" in err
