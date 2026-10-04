@@ -200,8 +200,10 @@ export GROQ_API_KEY=...                       # PowerShell: $env:GROQ_API_KEY=".
 python -m cglc.web                            # http://127.0.0.1:8000, then "Try it"
 ```
 
-The **Try it** section of the site takes any pasted/uploaded text or PDF, a question, and optional
-"what must be proven" requirements, then shows the verdict, the five gates, cited evidence, a
+The **Try it** section of the site takes any pasted/uploaded text or PDF, a question, and the
+**contract** (what must be proven; per the design the contract comes from the user in V1, so the box
+is pre-filled with a generic requirement that you can edit, and every result states who wrote the
+contract), then shows the verdict, the five gates, cited evidence, a
 step-by-step timeline and the spend. Pick **Groq** (load your key's model list or type any model id),
 **Claude**, or **Offline** (no key, no AI; mechanics only). Small inputs go into the prompt whole;
 large ones switch to retrieval (BM25 top passages) automatically. Groq works in `json_object` mode on

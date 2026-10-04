@@ -189,13 +189,33 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
     total_chars = sum(len(t) for t in docs.values())
     warnings: List[str] = []
 
-    obligations = c["obligations"] or [c["goal"] if provider == "offline" else DEFAULT_OBLIGATION]
+    # Sec 4.1 / 10.1: in V1 the hard obligations come from the user (or the
+    # benchmark); the controller never invents them. The page pre-fills a generic
+    # requirement that the user sees and can edit. If none arrives at all we fall
+    # back to a generic one and say so, never labelling it user-supplied.
+    given = c["obligations"]
+    if given and given != [DEFAULT_OBLIGATION]:
+        obligations, provenance = given, "user-supplied"
+    elif given:  # the pre-filled default, shown to the user and left in place
+        if provider == "offline":
+            obligations = [c["goal"]]
+            provenance = "derived from the question (offline demo only)"
+        else:
+            obligations = given
+            provenance = "generic default requirement shown pre-filled and accepted by the user"
+    else:
+        obligations = [c["goal"] if provider == "offline" else DEFAULT_OBLIGATION]
+        provenance = "system default (the user gave no requirements)"
+        warnings.append("No requirements were given, so a generic default contract was used. "
+                        "The design expects you to state what must be proven; add your own "
+                        "requirement lines for a stricter check.")
     contract = TaskContract.create(
         goal=c["goal"],
         process_duties=(["Use evidence from every supplied document"]
                         if c["require_all_docs"] else []),
         evidence_obligations=obligations,
         answer_schema={"format": ANSWER_STYLE},
+        provenance=provenance,
     )
     trace = Trace()
     ledger = EvidenceLedger([o.obligation_id for o in contract.evidence_obligations])
@@ -297,7 +317,7 @@ def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,
         "final_gates": final_gates, "reasons": reasons,
         "blocked_condition": last.blocked_condition if last else "",
         "checkpoints": checkpoints, "steps": steps, "evidence": evidence,
-        "contract": {"goal": contract.goal,
+        "contract": {"goal": contract.goal, "provenance": contract.provenance,
                      "duties": [d.description for d in contract.process_duties],
                      "obligations": [o.proposition for o in contract.evidence_obligations]},
         "docs": {"count": n_docs, "chars": total_chars,

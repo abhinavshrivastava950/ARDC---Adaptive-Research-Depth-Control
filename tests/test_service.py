@@ -393,3 +393,26 @@ def test_unexpected_errors_name_the_function_and_log_a_scrubbed_traceback(capsys
     err = capsys.readouterr().err
     assert status == 500 and "RuntimeError in boom" in out["error"]
     assert GOOD_KEY not in err and GOOD_KEY not in json.dumps(out) and "leaked in message" in err
+
+
+def _contract_of(**over):
+    req = {"provider": "groq", "api_key": GOOD_KEY, "goal": "How many remote days?", "documents": DOCS}
+    req.update(over)
+    return service.run_task(req, llm_factory=lambda *a, **k: SmartFake())["contract"]
+
+
+def test_contract_provenance_is_honest_about_who_wrote_it():
+    mine = _contract_of(obligations=["The approver is named in a quote."])
+    assert mine["provenance"] == "user-supplied" and mine["obligations"] == ["The approver is named in a quote."]
+    shown = _contract_of(obligations=[service.DEFAULT_OBLIGATION])
+    assert "accepted by the user" in shown["provenance"]
+    r = service.run_task({"provider": "groq", "api_key": GOOD_KEY, "goal": "q?", "documents": DOCS},
+                         llm_factory=lambda *a, **k: SmartFake())
+    assert r["contract"]["provenance"].startswith("system default")
+    assert any("No requirements were given" in w for w in r["warnings"])
+
+
+def test_offline_demo_derives_its_requirement_from_the_question_and_says_so():
+    c = service.run_task({"provider": "offline", "goal": "remote work days",
+                          "documents": DOCS, "obligations": [service.DEFAULT_OBLIGATION]})["contract"]
+    assert c["obligations"] == ["remote work days"] and "offline demo only" in c["provenance"]

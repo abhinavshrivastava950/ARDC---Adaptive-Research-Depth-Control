@@ -6,6 +6,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const API = (window.CGLC_API_BASE || "").replace(/\/$/, "");
 const MAX_DOCS = 20, MAX_CHARS = 600000;
 const state = { docs: [], lastResult: null, pdfReady: null };
+// Same text as service.DEFAULT_OBLIGATION. Pre-filled so the contract is visible and editable.
+const DEFAULT_REQ = "Every claim in the answer is supported by a passage from the supplied documents; no claim is left unsupported.";
 
 function el(tag, props, ...kids) {
   const n = document.createElement(tag);
@@ -261,6 +263,15 @@ function render(r) {
   root.append(v);
   (r.warnings || []).forEach(w => root.append(el("div", { class: "r-warn", text: w })));
 
+  // contract: what this run was judged against, and where it came from
+  const ct = r.contract || {};
+  root.append(el("div", { class: "r-h", text: "The contract this run was judged against" }));
+  const cc = el("div", { class: "r-obl" }, el("div", {}, el("b", { text: "Goal: " }), ct.goal || ""));
+  (ct.obligations || []).forEach(o => cc.append(el("div", { class: "r-sub", text: "Must be proven: " + o })));
+  (ct.duties || []).forEach(d => cc.append(el("div", { class: "r-sub", text: "Hard duty: " + d })));
+  cc.append(el("div", { class: "r-sub", text: "Where this contract came from: " + (ct.provenance || "unknown") }));
+  root.append(cc);
+
   // 2. answer
   root.append(el("div", { class: "r-h" }, offline ? "Retrieved passages (not an AI answer)" : "Answer",
     el("span", { class: `r-badge ${approved ? "ok" : "stop"}`, text: approved ? "APPROVED" : "UNAPPROVED DRAFT" })));
@@ -379,6 +390,7 @@ function init() {
     $("#t-goal").value = s.goal; showStatus(""); }));
   $("#t-clear").addEventListener("click", () => { state.docs = []; renderDocs(); });
   $("#t-run").addEventListener("click", run);
+  if (!$("#t-obl").value.trim()) $("#t-obl").value = DEFAULT_REQ;
   applyProvider(); renderDocs();
   fetch(API + "/api/health").then(r => r.json()).then(() => {}).catch(() => {
     $("#t-offline-note").hidden = false; });
