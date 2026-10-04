@@ -61,6 +61,27 @@ class InputError(ValueError):
     pass
 
 
+def _opt_str(req: Dict[str, Any], key: str, default: str = "") -> str:
+    """A request field that must be a string if present (never silently str()-ed)."""
+    v = req.get(key)
+    if v is None:
+        return default
+    if not isinstance(v, str):
+        raise InputError(f"'{key}' must be a string.")
+    return v
+
+
+def _finite(obj: Any) -> Any:
+    """Replace NaN/Infinity with null so a response is always strict JSON."""
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite(v) for v in obj]
+    return obj
+
+
 def scrub(text: str, *secrets: Optional[str]) -> str:
     for s in secrets:
         if s and len(s) >= 6:
@@ -79,12 +100,16 @@ def _clean_docs(raw: Any) -> Dict[str, str]:
     for i, d in enumerate(raw):
         if not isinstance(d, dict):
             raise InputError("Malformed document entry.")
-        name = _NAME_BAD.sub("", str(d.get("name") or f"document-{i + 1}")).strip()[:60]
+        if d.get("name") is not None and not isinstance(d.get("name"), str):
+            raise InputError("A document's 'name' must be a string.")
+        if not isinstance(d.get("text"), str):
+            raise InputError(f"Document {i + 1}: 'text' must be a string.")
+        name = _NAME_BAD.sub("", d.get("name") or f"document-{i + 1}").strip()[:60]
         name = name or f"document-{i + 1}"
         base, n = name, 2
         while name in docs:
             name, n = f"{base}-{n}", n + 1
-        text = str(d.get("text") or "").replace("\x00", "").strip()
+        text = d["text"].replace("\x00", "").strip()
         if not text:
             continue
         total += len(text)
@@ -97,41 +122,50 @@ def _clean_docs(raw: Any) -> Dict[str, str]:
 
 
 def _clean_request(req: Dict[str, Any]) -> Dict[str, Any]:
-    provider = str(req.get("provider", "")).lower()
+    provider = _opt_str(req, "provider").lower()
     if provider not in PROVIDERS:
         raise InputError(f"Unknown provider (use one of {', '.join(PROVIDERS)}).")
     contract = None
     raw_contract = req.get("contract")
-    if raw_contract is not None:
+    if "contract" in req:  # present but null/number/list/... is malformed, not "absent"
         # V1 (Sec 4.1): the user supplies the whole tuple K as JSON.
         if not isinstance(raw_contract, dict):
-            raise InputError("The contract must be a JSON object.")
+            kind = {bool: "true/false", int: "a number", float: "a number", str: "a string",
+                    list: "a list", type(None): "null"}.get(type(raw_contract), "something else")
+            raise InputError(f"The contract must be a JSON object, but got {kind}.")
         try:
             contract = TaskContract.from_dict(raw_contract, provenance="user-supplied (JSON contract)")
         except ValueError as e:
             raise InputError(f"Contract: {e}")
         goal = contract.goal
     else:
-        goal = str(req.get("goal") or "").strip()
+        goal = _opt_str(req, "goal").strip()
         if not goal:
             raise InputError("Write the question or task you want answered.")
         if len(goal) > MAX_GOAL:
             raise InputError(f"The task is too long (max {MAX_GOAL} characters).")
-    model = str(req.get("model") or DEFAULT_MODELS[provider]).strip()
+    model = _opt_str(req, "model").strip() or DEFAULT_MODELS[provider]
     if provider != "offline" and not _MODEL_RE.match(model):
         raise InputError("Invalid model id.")
-    obl = [str(o).strip()[:MAX_OBL_CHARS] for o in (req.get("obligations") or [])
-           if str(o).strip()][:MAX_OBLIGATIONS]
-    depth = str(req.get("depth") or "standard")
+    raw_obl = req.get("obligations")
+    if raw_obl is None:
+        raw_obl = []
+    if not isinstance(raw_obl, list) or any(not isinstance(o, str) for o in raw_obl):
+        raise InputError("'obligations' must be a list of strings.")
+    obl = [o.strip()[:MAX_OBL_CHARS] for o in raw_obl if o.strip()][:MAX_OBLIGATIONS]
+    require_all = req.get("require_all_docs", False)
+    if not isinstance(require_all, bool):
+        raise InputError("'require_all_docs' must be true or false.")
+    depth = _opt_str(req, "depth") or "standard"
     if depth not in PRESETS:
         raise InputError("Unknown depth preset.")
-    mode = str(req.get("mode") or "auto")
+    mode = _opt_str(req, "mode") or "auto"
     if mode not in ("auto", "full", "rag"):
         raise InputError("Unknown retrieval mode.")
     return dict(provider=provider, goal=goal, model=model, obligations=obl, contract=contract,
                 depth=depth, mode=mode, docs=_clean_docs(req.get("documents")),
-                require_all_docs=bool(req.get("require_all_docs")),
-                api_key=clean_api_key(req.get("api_key")))
+                require_all_docs=require_all,
+                api_key=clean_api_key(_opt_str(req, "api_key")))
 
 
 # The worker must copy quotes verbatim, so it runs cold. (T_gen 0.7 is for diverse candidate
@@ -427,10 +461,14 @@ def _fail(status: int, kind: str, msg: str, *secrets) -> Tuple[int, Dict[str, An
 def _parse(raw: bytes) -> Dict[str, Any]:
     if len(raw) > MAX_BODY_BYTES:
         raise InputError("Request too large.")
+    def no_constants(name: str):
+        raise ValueError(name)  # NaN / Infinity / -Infinity are not valid JSON
     try:
-        d = json.loads(raw.decode("utf-8"))
+        d = json.loads(raw.decode("utf-8"), parse_constant=no_constants)
+    except RecursionError:
+        raise InputError("The JSON is nested too deeply.")
     except (ValueError, UnicodeDecodeError):
-        raise InputError("Request body must be JSON.")
+        raise InputError("Request body must be valid JSON (NaN and Infinity are not allowed).")
     if not isinstance(d, dict):
         raise InputError("Request body must be a JSON object.")
     return d
@@ -453,7 +491,7 @@ def handle_run(raw: bytes, **kw) -> Tuple[int, Dict[str, Any]]:
     try:
         req = _parse(raw)
         key = str(req.get("api_key") or "") or None
-        return 200, run_task(req, **kw)
+        return 200, _finite(run_task(req, **kw))
     except InputError as e:
         return _fail(400, "input", str(e), key)
     except LLMConfigError as e:

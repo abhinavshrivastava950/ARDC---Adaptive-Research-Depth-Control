@@ -13,6 +13,8 @@ supplies the whole tuple as one object.
 from __future__ import annotations
 
 import json
+import math
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
@@ -21,6 +23,22 @@ from typing import Any, Dict, List
 # deterministic guarantee level enforces machine-checkable duties). Free text
 # that nothing can verify is rejected instead of silently never being satisfied.
 DUTY_CHECKS = ("use_every_document", "cite_document", "min_distinct_sources")
+_ID = re.compile(r"^[A-Za-z0-9_.\-]{1,40}$")
+
+
+def _kind(v: Any) -> str:
+    """Plain-English JSON type name for error messages."""
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "true/false"
+    if isinstance(v, (int, float)):
+        return "a number"
+    if isinstance(v, str):
+        return "a string"
+    if isinstance(v, list):
+        return "a list"
+    return "an object" if isinstance(v, dict) else type(v).__name__
 
 
 @dataclass
@@ -84,7 +102,7 @@ class TaskContract:
         set by the caller (the server), never trusted from the input.
         """
         if not isinstance(d, dict):
-            raise ValueError("the contract must be a JSON object")
+            raise ValueError(f"the contract must be a JSON object (like {{\"goal\": ...}}), but got {_kind(d)}")
         allowed = {"goal", "process_duties", "evidence_obligations", "soft_prefs", "blockers",
                    "answer_schema", "budget_policy", "revision", "contract_id", "provenance"}
         unknown = sorted(set(d) - allowed)
@@ -94,35 +112,45 @@ class TaskContract:
 
         def text(v: Any, name: str, limit: int) -> str:
             if not isinstance(v, str) or not v.strip():
-                raise ValueError(f"{name} must be a non-empty string")
+                raise ValueError(f"{name} must be a non-empty string, but got {_kind(v)}")
             if len(v) > limit:
                 raise ValueError(f"{name} is too long (max {limit} characters)")
             return v.strip()
 
         def items(v: Any, name: str, limit: int) -> list:
-            if v is None:
-                return []
             if not isinstance(v, list):
-                raise ValueError(f"{name} must be a list")
+                raise ValueError(f"{name} must be a list, but got {_kind(v)}")
             if len(v) > limit:
                 raise ValueError(f"{name} has too many entries (max {limit})")
             return v
 
         def small_obj(v: Any, name: str) -> Dict[str, Any]:
-            if v is None:
-                return {}
             if not isinstance(v, dict):
-                raise ValueError(f"{name} must be a JSON object")
-            if len(json.dumps(v)) > 2000:
+                raise ValueError(f"{name} must be a JSON object, but got {_kind(v)}")
+            try:
+                size = len(json.dumps(v, allow_nan=False))
+            except (TypeError, ValueError):
+                raise ValueError(f"{name} must contain only plain JSON values (no NaN or Infinity)")
+            if size > 2000:
                 raise ValueError(f"{name} is too large (max 2000 characters of JSON)")
             return v
+
+        def ident(v: Any, name: str) -> str:
+            t = text(v, name, 40)
+            if not _ID.match(t):
+                raise ValueError(f"{name} may use only letters, digits, '_', '-' and '.' (max 40)")
+            return t
+
+        def finite_positive(v: Any) -> bool:
+            return (isinstance(v, (int, float)) and not isinstance(v, bool)
+                    and math.isfinite(v) and v > 0)
 
         def whole(v: Any, lo: int, hi: int | None = None) -> bool:
             return (isinstance(v, int) and not isinstance(v, bool) and v >= lo
                     and (hi is None or v <= hi))
 
         duties: List[ProcessDuty] = []
-        for i, x in enumerate(items(d.get("process_duties"), "process_duties", 6)):
+        for i, x in enumerate(items(d.get("process_duties", []), "process_duties", 6)):
             if not isinstance(x, dict):
                 raise ValueError(
                     f"process_duties[{i}] must be an object with a machine-checkable 'check' "
@@ -138,13 +166,13 @@ class TaskContract:
                     raise ValueError(f"process_duties[{i}].n must be a whole number >= 1")
                 params["n"] = x["n"]
             duties.append(ProcessDuty(
-                duty_id=text(x.get("duty_id") or f"proc-{i}", f"process_duties[{i}].duty_id", 40),
+                duty_id=ident(x.get("duty_id") or f"proc-{i}", f"process_duties[{i}].duty_id"),
                 description=text(x.get("description") or check.replace("_", " "),
                                  f"process_duties[{i}].description", 300),
                 check=check, params=params))
 
         obls: List[EvidenceObligation] = []
-        for i, x in enumerate(items(d.get("evidence_obligations"), "evidence_obligations", 8)):
+        for i, x in enumerate(items(d.get("evidence_obligations", []), "evidence_obligations", 8)):
             if isinstance(x, str):
                 x = {"proposition": x}
             if not isinstance(x, dict):
@@ -153,21 +181,21 @@ class TaskContract:
             if not whole(rr, 1, 5):
                 raise ValueError(f"evidence_obligations[{i}].required_receipts must be 1 to 5")
             w = x.get("weight", 1.0)
-            if isinstance(w, bool) or not isinstance(w, (int, float)) or w <= 0:
-                raise ValueError(f"evidence_obligations[{i}].weight must be a positive number")
+            if not finite_positive(w):
+                raise ValueError(f"evidence_obligations[{i}].weight must be a positive, finite number")
             obls.append(EvidenceObligation(
-                obligation_id=text(x.get("obligation_id") or f"ev-{i}",
-                                   f"evidence_obligations[{i}].obligation_id", 40),
+                obligation_id=ident(x.get("obligation_id") or f"ev-{i}",
+                                    f"evidence_obligations[{i}].obligation_id"),
                 proposition=text(x.get("proposition"), f"evidence_obligations[{i}].proposition", 400),
                 weight=float(w), required_receipts=rr))
 
         blockers = [text(b, f"blockers[{i}]", 300)
-                    for i, b in enumerate(items(d.get("blockers"), "blockers", 10))]
-        budget = small_obj(d.get("budget_policy"), "budget_policy")
+                    for i, b in enumerate(items(d.get("blockers", []), "blockers", 10))]
+        budget = small_obj(d.get("budget_policy", {}), "budget_policy")
         for k in ("max_tool_calls", "max_tokens", "max_seconds"):
             v = budget.get(k)
-            if k in budget and (isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0):
-                raise ValueError(f"budget_policy.{k} must be a positive number")
+            if k in budget and not finite_positive(v):
+                raise ValueError(f"budget_policy.{k} must be a positive, finite number")
         rev = d.get("revision", 1)
         if not whole(rev, 1):
             raise ValueError("revision must be a whole number >= 1")
@@ -176,8 +204,8 @@ class TaskContract:
             contract_id=f"K-{uuid.uuid4().hex[:8]}",
             goal=text(d.get("goal"), "goal", 3000),
             process_duties=duties, evidence_obligations=obls,
-            soft_prefs=small_obj(d.get("soft_prefs"), "soft_prefs"), blockers=blockers,
-            answer_schema=small_obj(d.get("answer_schema"), "answer_schema"),
+            soft_prefs=small_obj(d.get("soft_prefs", {}), "soft_prefs"), blockers=blockers,
+            answer_schema=small_obj(d.get("answer_schema", {}), "answer_schema"),
             budget_policy=budget, provenance=provenance, revision=rev)
         problems = c.validate()
         if problems:
