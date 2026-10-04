@@ -172,22 +172,58 @@ function showStatus(msg, isErr) {
 
 /* ---------- run ---------- */
 let timer = null, abortCtl = null;
+const ANSWER_STYLE = "A concise, direct answer to the goal. After each claim, give the supporting document name in square brackets, e.g. [report.pdf].";
+function contractMode() { return ($("input[name=t-cmode]:checked") || {}).value || "simple"; }
+
+// The simple form compiled into the full tuple K, so both inputs mean the same thing.
+function compileForm() {
+  const reqs = $("#t-obl").value.split("\n").map(s => s.trim()).filter(Boolean);
+  return {
+    goal: $("#t-goal").value.trim(),
+    process_duties: $("#t-all").checked
+      ? [{ duty_id: "proc-0", description: "Use evidence from every supplied document", check: "use_every_document" }] : [],
+    evidence_obligations: reqs,
+    soft_prefs: {},
+    blockers: [],
+    answer_schema: { format: ANSWER_STYLE },
+    budget_policy: {}
+  };
+}
+function fillContract() {
+  $("#t-contract").value = JSON.stringify(compileForm(), null, 2);
+  $("#t-contract-msg").textContent = "Filled from the simple form. Edit anything, then run.";
+}
+function applyContractMode() {
+  const json = contractMode() === "json";
+  $("#t-simple").hidden = json; $("#t-jsonwrap").hidden = !json;
+  if (json && !$("#t-contract").value.trim()) fillContract();
+}
+
 async function run() {
   $("#t-error").hidden = true; $("#t-result").hidden = true;
   const p = provider();
-  const goal = $("#t-goal").value.trim();
+  const jsonMode = contractMode() === "json";
+  let contract = null;
+  if (jsonMode) {
+    try { contract = JSON.parse($("#t-contract").value); }
+    catch (e) { return showStatus("The contract is not valid JSON: " + e.message, true); }
+    if (!contract || typeof contract !== "object" || Array.isArray(contract)) return showStatus("The contract must be a JSON object.", true);
+  }
+  const goal = jsonMode ? "" : $("#t-goal").value.trim();
   if (!state.docs.length) { const t = $("#t-paste").value.trim(); if (t) { addDoc("pasted-text.txt", t); $("#t-paste").value = ""; } }
   if (!state.docs.length) return showStatus("Add at least one document first (paste, upload, or load a sample).", true);
-  if (!goal) return showStatus("Type the question or task first.", true);
+  if (!jsonMode && !goal) return showStatus("Type the question or task first.", true);
   if (PROV[p].needsKey && !$("#t-key").value.trim()) return showStatus("Paste your API key, or switch to Offline mode.", true);
   const body = {
-    provider: p, api_key: $("#t-key").value.trim(), model: $("#t-model").value.trim(), goal,
-    documents: state.docs, obligations: $("#t-obl").value.split("\n").map(s => s.trim()).filter(Boolean),
-    require_all_docs: $("#t-all").checked, depth: $("#t-depth").value, mode: $("#t-mode").value
+    provider: p, api_key: $("#t-key").value.trim(), model: $("#t-model").value.trim(),
+    documents: state.docs, depth: $("#t-depth").value, mode: $("#t-mode").value
   };
+  if (jsonMode) body.contract = contract;
+  else Object.assign(body, { goal, obligations: $("#t-obl").value.split("\n").map(s => s.trim()).filter(Boolean),
+                             require_all_docs: $("#t-all").checked });
   const btn = $("#t-run"); btn.disabled = true;
   const t0 = Date.now();
-  timer = setInterval(() => showStatus(`Running… ${Math.round((Date.now() - t0) / 1000)}s. The AI works, the controller checks, repeat. Usually 10–50 s.`), 500);
+  timer = setInterval(() => showStatus(`Running… ${Math.round((Date.now() - t0) / 1000)}s. The AI works, the controller checks, repeat. Usually 10–60 s; slow free-tier keys can take a few minutes.`), 500);
   showStatus("Running… 0s");
   abortCtl = new AbortController();
   try {
@@ -270,6 +306,7 @@ function render(r) {
   (ct.obligations || []).forEach(o => cc.append(el("div", { class: "r-sub", text: "Must be proven: " + o })));
   (ct.duties || []).forEach(d => cc.append(el("div", { class: "r-sub", text: "Hard duty: " + d })));
   cc.append(el("div", { class: "r-sub", text: "Where this contract came from: " + (ct.provenance || "unknown") }));
+  (ct.notes || []).forEach(n => cc.append(el("div", { class: "r-sub", text: "• " + n })));
   root.append(cc);
 
   // 2. answer
@@ -316,6 +353,7 @@ function render(r) {
   const stepEl = s => el("div", { class: "r-step" },
     el("b", { text: `Worker step ${s.n}` }), ` (${s.intent || "CONTINUE"}) searched `, el("code", { text: s.query || "…" }),
     ` → saw ${s.chunks.length} passage${s.chunks.length === 1 ? "" : "s"}, ${s.new_chunks} new · ${s.tokens.toLocaleString()} tokens`,
+    s.dropped ? ` · ${s.dropped} quote${s.dropped === 1 ? "" : "s"} discarded (not found in your documents)` : "",
     s.blocker ? ` · blocker: ${s.blocker}` : "", s.contradiction ? " · reported a contradiction" : "");
   r.checkpoints.forEach(c => {
     while (si < r.steps.length && r.steps[si].n <= c.after_steps) tl.append(stepEl(r.steps[si++]));
@@ -387,10 +425,13 @@ function init() {
   drop.addEventListener("drop", e => handleFiles([...e.dataTransfer.files]));
   document.querySelectorAll("[data-sample]").forEach(b => b.addEventListener("click", () => {
     const s = SAMPLES[b.dataset.sample]; state.docs = []; s.docs.forEach(d => addDoc(d.name, d.text));
-    $("#t-goal").value = s.goal; showStatus(""); }));
+    $("#t-goal").value = s.goal; showStatus("");
+    if (contractMode() === "json") fillContract(); }));
   $("#t-clear").addEventListener("click", () => { state.docs = []; renderDocs(); });
   $("#t-run").addEventListener("click", run);
   if (!$("#t-obl").value.trim()) $("#t-obl").value = DEFAULT_REQ;
+  document.querySelectorAll("input[name=t-cmode]").forEach(i => i.addEventListener("change", applyContractMode));
+  $("#t-contract-fill").addEventListener("click", fillContract);
   applyProvider(); renderDocs();
   fetch(API + "/api/health").then(r => r.json()).then(() => {}).catch(() => {
     $("#t-offline-note").hidden = false; });

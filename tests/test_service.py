@@ -26,8 +26,8 @@ class SmartFake:
         self.calls += 1
         props = schema["properties"]
         u = LLMUsage(input_tokens=200, output_tokens=40)
-        if set(props) == {"query"}:
-            d = {"query": "remote work days manager approval"}
+        if set(props) == {"queries"}:
+            d = {"queries": ["remote work days manager approval"]}
         elif "citations" in props:
             d = {"query": "remote work", "draft": "Up to three days, with manager approval. [policy.txt]",
                  "citations": [{"source_id": "policy.txt",

@@ -1,7 +1,7 @@
 {
   "functions": {
     "app.py": {
-      "maxDuration": 60,
+      "maxDuration": 300,
       "excludeFiles": "{data/**,results/**,demo/**,docs/**,tests/**,examples/**,scripts/**,**/__pycache__/**}"
     }
   },

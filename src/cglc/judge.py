@@ -106,7 +106,7 @@ For each evidence obligation give:
 
 The draft is allowed to paraphrase: SUPPORTED means a cited span states or directly implies the claim, not that the draft repeats the span word for word. Be skeptical: fluent text without a matching span is not evidence. When unsure, choose the lower status.
 
-Also report: answer_conforms (true when the draft is non-empty and actually addresses the goal; do NOT mark it false for citation placement, formatting, style or length, those are never a reason to refuse); needs_user (only the user can supply something required); infeasible (the documents cannot contain what is needed, so more work cannot help; use rarely); blocker (short reason or empty); has_alternative (an untried part or angle of the documents plausibly helps); direction (PRODUCTIVE, LOW_YIELD or VERIFY_NEEDED).
+Also report: answer_conforms (true when the draft is non-empty and actually addresses the goal; do NOT mark it false for citation placement, formatting, style or length, those are never a reason to refuse); needs_user (only the user can supply something required); infeasible (the documents cannot contain what is needed, so more work cannot help; use rarely); blocker (short reason, or empty: report one ONLY if a blocker declared in the contract clearly holds or the documents clearly cannot supply what is needed; evidence that is merely missing, uncited or still to be found is NOT a blocker); has_alternative (an untried part or angle of the documents plausibly helps); direction (PRODUCTIVE, LOW_YIELD or VERIFY_NEEDED).
 
 For each possible next action (CONTINUE the current direction, VERIFY a weak or contested claim, REDIRECT to a different direction) estimate: progress (LOW, MEDIUM, HIGH expected contract-relevant progress), and four numbers from 0 to 1: verify_weak_claim, move_off_stalled_direction, target_open_gap, repeat_risk.
 
@@ -144,9 +144,12 @@ class LLMJudge:
                  for s in self.worker.evidence.values()]
         state = {oid: {"status": ledger.s[oid], "contradiction": ledger.c[oid]}
                  for oid in ledger.s}
+        blockers = (f"MATERIAL BLOCKERS declared by the contract (if one of these holds, say so in "
+                    f"`blocker`): {json.dumps(contract.blockers)}\n" if contract.blockers else "")
         return (
             f"GOAL: {contract.goal}\n"
             f"ANSWER SCHEMA: {json.dumps(contract.answer_schema)}\n"
+            f"{blockers}"
             f"EVIDENCE OBLIGATIONS: {json.dumps(obls)}\n"
             f"LEDGER STATE BEFORE THIS CHECKPOINT: {json.dumps(state)}\n\n"
             f"CITED SPANS (the only valid span_ids):\n{json.dumps(spans, indent=1)}\n\n"
@@ -232,12 +235,16 @@ class LLMJudge:
                 contested = True
 
             claimed = entry.get("status")
+            # distinct supporting spans on record for this obligation (contract: required_receipts)
+            have = len({r.span_id for r in ledger.receipts.get(oid, []) if r.relation == "supports"})
             ok = (claimed == "SUPPORTED" and supports > 0
+                  and have >= obl.required_receipts
                   and ledger.s.get(oid, 0.0) >= SUPPORTED
                   and not ledger.c.get(oid) and not entry.get("contradicted"))
             if claimed == "SUPPORTED" and not ok:
-                notes.append(f"{oid}: SUPPORTED not accepted "
-                             "(no valid cited receipt / weak / contested)")
+                why = ("only %d of the %d supporting spans the contract requires" % (have, obl.required_receipts)
+                       if have < obl.required_receipts else "no valid cited receipt / weak / contested")
+                notes.append(f"{oid}: SUPPORTED not accepted ({why})")
             if not ok:
                 sufficient = False
                 gaps.append(oid)

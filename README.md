@@ -209,13 +209,52 @@ step-by-step timeline and the spend. Pick **Groq** (load your key's model list o
 large ones switch to retrieval (BM25 top passages) automatically. Groq works in `json_object` mode on
 every model; the reply is schema-validated with one repair retry, and anything invalid fails closed.
 
+### The contract as JSON
+
+The contract is the tuple `K = (g, H_proc, H_evid, S_soft, B_mat, A_schema, B_policy)`. Per the design, in
+version 1 it is supplied by the user (or the benchmark); the controller never invents it. The site's
+"Contract as JSON" mode and the API field `contract` take the whole tuple:
+
+```json
+{
+  "goal": "How is revenue split, and which provider do advertisers use?",
+  "process_duties": [{"check": "cite_document", "document": "report.pdf"}],
+  "evidence_obligations": [
+    {"obligation_id": "split", "proposition": "The revenue split is stated in a quote."},
+    {"proposition": "The funding provider is named in a quote.", "required_receipts": 2}
+  ],
+  "soft_prefs": {"style": "two short sentences"},
+  "blockers": ["the document does not describe revenue at all"],
+  "answer_schema": {"format": "Two short sentences, each followed by the document name in brackets."},
+  "budget_policy": {"max_tool_calls": 8, "max_tokens": 40000, "max_seconds": 120}
+}
+```
+
+What each field does in this version (the result also prints this list for the contract you sent):
+
+| Field | Effect |
+|---|---|
+| `goal` (g) | the question; used by worker and judge |
+| `process_duties` (H_proc) | hard duties **checked by code**: `use_every_document`, `cite_document` (+`document`), `min_distinct_sources` (+`n`). Free text is rejected because nothing could verify it |
+| `evidence_obligations` (H_evid) | what must be proven; `required_receipts` = distinct supporting quotes needed |
+| `soft_prefs` (S_soft) | shown to the worker as preferences, **not enforced** |
+| `blockers` (B_mat) | conditions the judge watches for (a model judgement, not a code check) |
+| `answer_schema` (A_schema) | required answer form, shown to worker and judge |
+| `budget_policy` (B_policy) | `max_tool_calls` / `max_tokens` / `max_seconds` set the run limits (capped by the server); other keys are recorded only |
+
+Unknown fields, wrong types and impossible duties are rejected with a message. The server sets the
+provenance (`user-supplied (JSON contract)`); it is never taken from the input. The simple form compiles
+to the same structure.
+
 ### Deploy (Vercel)
 
 `app.py` is a small Flask app (the API: `/api/run`, `/api/models`, `/api/health`); the demo site is
 served from `public/` by Vercel's CDN. Import the repo in Vercel (framework is auto-detected as Flask,
 no build command), or run `vercel deploy`. `vercel.json` sets a 60 s function limit. Keys are sent per
 request over HTTPS, used for that run only, never stored or logged; hosted runs are capped (depth
-presets, 50 s time limit, 600k characters).
+presets, a 240 s time limit that you can change with `CGLC_TIME_LIMIT`, 600k characters). Vercel's Hobby
+plan allows 300 s per function with Fluid compute (default for new projects); without Fluid compute set
+`CGLC_TIME_LIMIT=50` and `maxDuration` 60.
 
 `demo/` is the canonical copy of the site. After editing it run `python scripts/sync_site.py` to refresh
 `docs/` (GitHub Pages) and `public/` (Vercel); a test fails if they drift.

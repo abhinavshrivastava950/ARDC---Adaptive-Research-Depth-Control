@@ -53,7 +53,8 @@ class WorkerAdapter(DocumentWorker):
             status="final_proposal" if res.propose_final else "ok",
             detail={"intent": intent, "blocker": res.blocker,
                     "contradiction": res.contradiction,
-                    "cited_docs": res.detail.get("cited_docs", [])},
+                    "cited_docs": res.detail.get("cited_docs", []),
+                    "dropped_citations": res.detail.get("dropped_citations", 0)},
         )
         return res
 

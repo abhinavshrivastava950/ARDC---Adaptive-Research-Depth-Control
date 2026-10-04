@@ -100,3 +100,9 @@ details.t-gloss dt{font-weight:700;margin-top:8px}
 details.t-gloss dd{margin:2px 0 0;color:#3d3a33}
 #t-raw{max-height:300px;overflow:auto;white-space:pre;font-size:11.5px;font-family:var(--mono);background:#F4F1E8;
   border:1px solid var(--line);border-radius:3px;padding:12px;margin-top:8px}
+
+/* contract JSON mode */
+dl.t-fields{margin:10px 0 0;font-size:13px}
+dl.t-fields dt{font-weight:700;margin-top:8px}
+dl.t-fields dd{margin:2px 0 0;color:#3d3a33}
+dl.t-fields code{white-space:normal}

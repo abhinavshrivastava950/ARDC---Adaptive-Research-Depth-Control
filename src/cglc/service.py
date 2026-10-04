@@ -100,11 +100,23 @@ def _clean_request(req: Dict[str, Any]) -> Dict[str, Any]:
     provider = str(req.get("provider", "")).lower()
     if provider not in PROVIDERS:
         raise InputError(f"Unknown provider (use one of {', '.join(PROVIDERS)}).")
-    goal = str(req.get("goal") or "").strip()
-    if not goal:
-        raise InputError("Write the question or task you want answered.")
-    if len(goal) > MAX_GOAL:
-        raise InputError(f"The task is too long (max {MAX_GOAL} characters).")
+    contract = None
+    raw_contract = req.get("contract")
+    if raw_contract is not None:
+        # V1 (Sec 4.1): the user supplies the whole tuple K as JSON.
+        if not isinstance(raw_contract, dict):
+            raise InputError("The contract must be a JSON object.")
+        try:
+            contract = TaskContract.from_dict(raw_contract, provenance="user-supplied (JSON contract)")
+        except ValueError as e:
+            raise InputError(f"Contract: {e}")
+        goal = contract.goal
+    else:
+        goal = str(req.get("goal") or "").strip()
+        if not goal:
+            raise InputError("Write the question or task you want answered.")
+        if len(goal) > MAX_GOAL:
+            raise InputError(f"The task is too long (max {MAX_GOAL} characters).")
     model = str(req.get("model") or DEFAULT_MODELS[provider]).strip()
     if provider != "offline" and not _MODEL_RE.match(model):
         raise InputError("Invalid model id.")
@@ -116,10 +128,103 @@ def _clean_request(req: Dict[str, Any]) -> Dict[str, Any]:
     mode = str(req.get("mode") or "auto")
     if mode not in ("auto", "full", "rag"):
         raise InputError("Unknown retrieval mode.")
-    return dict(provider=provider, goal=goal, model=model, obligations=obl,
+    return dict(provider=provider, goal=goal, model=model, obligations=obl, contract=contract,
                 depth=depth, mode=mode, docs=_clean_docs(req.get("documents")),
                 require_all_docs=bool(req.get("require_all_docs")),
                 api_key=clean_api_key(req.get("api_key")))
+
+
+# The worker must copy quotes verbatim, so it runs cold. (T_gen 0.7 is for diverse candidate
+# generation; at 0.7 the model sometimes paraphrases inside a quote and the quote is discarded.)
+WORKER_TEMPERATURE = 0.0
+HARD_MAX_TOOLS = 20.0
+HARD_MAX_TOKENS = 120_000.0
+
+
+def _build_contract(c: Dict[str, Any], provider: str, warnings: List[str]) -> TaskContract:
+    """The contract for this run. A JSON contract from the user is used as given.
+    The simple form (question + requirement lines) is compiled into the same
+    structure, so there is one code path and one audit format."""
+    if c.get("contract") is not None:
+        return c["contract"]
+    # Sec 4.1 / 10.1: in V1 the hard obligations come from the user (or the
+    # benchmark); the controller never invents them. The page pre-fills a generic
+    # requirement that the user sees and can edit. If none arrives at all we fall
+    # back to a generic one and say so, never labelling it user-supplied.
+    given = c["obligations"]
+    if given and given != [DEFAULT_OBLIGATION]:
+        obligations, provenance = given, "user-supplied"
+    elif given:  # the pre-filled default, shown to the user and left in place
+        if provider == "offline":
+            obligations = [c["goal"]]
+            provenance = "derived from the question (offline demo only)"
+        else:
+            obligations = given
+            provenance = "generic default requirement shown pre-filled and accepted by the user"
+    else:
+        obligations = [c["goal"] if provider == "offline" else DEFAULT_OBLIGATION]
+        provenance = "system default (the user gave no requirements)"
+        warnings.append("No requirements were given, so a generic default contract was used. "
+                        "The design expects you to state what must be proven; add your own "
+                        "requirement lines for a stricter check.")
+    duties = ([{"duty_id": "proc-0", "description": "Use evidence from every supplied document",
+                "check": "use_every_document"}] if c["require_all_docs"] else [])
+    try:
+        return TaskContract.from_dict(
+            {"goal": c["goal"], "evidence_obligations": obligations, "process_duties": duties,
+             "answer_schema": {"format": ANSWER_STYLE}}, provenance=provenance)
+    except ValueError as e:
+        raise InputError(str(e))
+
+
+def _check_duties(contract: TaskContract, docs: Dict[str, str]) -> None:
+    """Reject duties that can never be met by these documents."""
+    for d in contract.process_duties:
+        if d.check == "cite_document" and d.params["document"] not in docs:
+            raise InputError(f"Duty '{d.duty_id}' needs a document named '{d.params['document']}'; "
+                             f"the documents are: {sorted(docs)}")
+        if d.check == "min_distinct_sources" and d.params["n"] > len(docs):
+            raise InputError(f"Duty '{d.duty_id}' needs {d.params['n']} distinct sources but only "
+                             f"{len(docs)} document(s) were given.")
+
+
+def _process_check(contract: TaskContract, worker, docs: Dict[str, str]):
+    """H_proc: hard duties are checked by code, never by the model (Sec 7.2)."""
+    if not contract.process_duties:
+        return None
+
+    def check():
+        read = worker.docs_read
+        unmet = []
+        for d in contract.process_duties:
+            ok = {"use_every_document": set(docs) <= read,
+                  "cite_document": d.params.get("document") in read,
+                  "min_distinct_sources": len(read) >= d.params.get("n", 1)}.get(d.check, False)
+            if not ok:
+                unmet.append(d.duty_id)
+        return (not unmet, unmet)
+    return check
+
+
+def contract_notes(contract: TaskContract) -> List[str]:
+    """Plain statements of what each field of K actually does in this version."""
+    notes = ["goal, evidence obligations and answer schema are used by the worker and the judge."]
+    if contract.process_duties:
+        notes.append("process duties are verified by code: " + "; ".join(
+            f"{d.duty_id} ({d.check})" for d in contract.process_duties) + ".")
+    if any(o.required_receipts > 1 for o in contract.evidence_obligations):
+        notes.append("an obligation with required_receipts = N is accepted only with N distinct supporting spans.")
+    if contract.soft_prefs:
+        notes.append("soft_prefs are shown to the worker as preferences; they are not enforced.")
+    if contract.blockers:
+        notes.append("blockers are given to the judge as conditions to watch for; this is a model "
+                     "judgement, not a code check.")
+    if contract.budget_policy:
+        notes.append("budget_policy max_tool_calls / max_tokens / max_seconds set this run's limits "
+                     "(capped by the server); other keys are recorded only.")
+    if any(o.weight != 1.0 for o in contract.evidence_obligations):
+        notes.append("obligation weights are recorded but do not change the decision yet.")
+    return notes
 
 
 # -- deadline wrappers (hosted functions have a hard wall-clock cap) -----------
@@ -180,43 +285,25 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
     provider, docs = c["provider"], c["docs"]
     started = time.time()
     limit = float(time_limit if time_limit is not None
-                  else os.environ.get("CGLC_TIME_LIMIT", "50"))
+                  else os.environ.get("CGLC_TIME_LIMIT", "240"))
     deadline = started + limit
+    total_chars = sum(len(t) for t in docs.values())
+    warnings: List[str] = []
+    contract = _build_contract(c, provider, warnings)
+    _check_duties(contract, docs)
+    if not contract.answer_schema:
+        contract.answer_schema = {"format": ANSWER_STYLE}
+    # B_policy: numeric max_* keys set this run's limits, never above the server caps.
     tools, tokens, max_ck = PRESETS[c["depth"]]
+    bp = contract.budget_policy
+    tools = min(float(bp.get("max_tool_calls", tools)), HARD_MAX_TOOLS)
+    tokens = min(float(bp.get("max_tokens", tokens)), HARD_MAX_TOKENS)
+    if "max_seconds" in bp:
+        limit = max(5.0, min(limit, float(bp["max_seconds"])))
+        deadline = started + limit
     cfg = dataclasses.replace(
         DEFAULT_CONFIG, limits=BudgetLimits(tool_calls=float(tools), tokens=float(tokens),
                                             wall_clock=limit * 2))
-    total_chars = sum(len(t) for t in docs.values())
-    warnings: List[str] = []
-
-    # Sec 4.1 / 10.1: in V1 the hard obligations come from the user (or the
-    # benchmark); the controller never invents them. The page pre-fills a generic
-    # requirement that the user sees and can edit. If none arrives at all we fall
-    # back to a generic one and say so, never labelling it user-supplied.
-    given = c["obligations"]
-    if given and given != [DEFAULT_OBLIGATION]:
-        obligations, provenance = given, "user-supplied"
-    elif given:  # the pre-filled default, shown to the user and left in place
-        if provider == "offline":
-            obligations = [c["goal"]]
-            provenance = "derived from the question (offline demo only)"
-        else:
-            obligations = given
-            provenance = "generic default requirement shown pre-filled and accepted by the user"
-    else:
-        obligations = [c["goal"] if provider == "offline" else DEFAULT_OBLIGATION]
-        provenance = "system default (the user gave no requirements)"
-        warnings.append("No requirements were given, so a generic default contract was used. "
-                        "The design expects you to state what must be proven; add your own "
-                        "requirement lines for a stricter check.")
-    contract = TaskContract.create(
-        goal=c["goal"],
-        process_duties=(["Use evidence from every supplied document"]
-                        if c["require_all_docs"] else []),
-        evidence_obligations=obligations,
-        answer_schema={"format": ANSWER_STYLE},
-        provenance=provenance,
-    )
     trace = Trace()
     ledger = EvidenceLedger([o.obligation_id for o in contract.evidence_obligations])
 
@@ -236,9 +323,9 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
         use_rag = (c["mode"] == "rag"
                    or (c["mode"] == "auto" and total_chars > FULL_CONTEXT_CHARS[provider]))
         mode = "rag" if use_rag else "full"
-        t_gen, t_sel = cfg.temp.T_gen, cfg.temp.T_select
+        t_gen, t_sel = WORKER_TEMPERATURE, cfg.temp.T_select
         if use_rag:
-            inner = RAGDocumentWorker(docs, contract, llm, top_k=4, temperature=t_gen)
+            inner = RAGDocumentWorker(docs, contract, llm, top_k=6, temperature=t_gen)
             warnings.append("Large input: retrieval (RAG) mode. Each step reads only the "
                             "top passages for a generated search query.")
         else:
@@ -247,11 +334,7 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
         harvest = False
 
     worker = _DeadlineWorker(inner, deadline)
-    process_check = None
-    if c["require_all_docs"]:
-        def process_check():
-            unmet = [] if set(docs) <= inner.docs_read else ["proc-0"]
-            return (not unmet, unmet)
+    process_check = _process_check(contract, inner, docs)
 
     djudge = _DeadlineJudge(judge, deadline)
     runner = Runner(cfg=cfg, judge=djudge,
@@ -260,6 +343,8 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
                      process_check=process_check)
     out = _serialize(c, mode, contract, ledger, trace, inner, res, cfg, warnings,
                      time.time() - started, len(docs), total_chars)
+    out["contract"]["json"] = contract.to_dict()
+    out["contract"]["notes"] = contract_notes(contract)
     out["time_limit_hit"] = bool(worker.hit or djudge.hit
                                  or getattr(locals().get("llm"), "deadline_hit", False))
     if out["time_limit_hit"] and out["decision"] != "ALLOW_FINALIZE":
@@ -282,7 +367,8 @@ def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,
             "query": e.action_text, "chunks": e.chunk_ids, "new_chunks": new,
             "tokens": round(e.cost.get("tokens", 0.0)), "seconds": round(e.cost.get("wall_clock", 0.0), 2),
             "status": e.status, "blocker": e.detail.get("blocker", ""),
-            "contradiction": bool(e.detail.get("contradiction"))})
+            "contradiction": bool(e.detail.get("contradiction")),
+            "dropped": int(e.detail.get("dropped_citations", 0))})
     checkpoints = [{
         "id": r.checkpoint_id, "triggers": r.trigger_reasons, "decision": r.decision,
         "rejected": r.rejected, "gates": r.gates, "receipts": r.receipt_ids,
@@ -327,7 +413,7 @@ def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,
                   "limits": cfg.limits.as_dict(), "elapsed_seconds": round(elapsed, 1)},
         "config": {"stagnation": dataclasses.asdict(cfg.stagnation),
                    "lease": dataclasses.asdict(cfg.lease),
-                   "temperature": {"worker": cfg.temp.T_gen, "judge": cfg.temp.T_select},
+                   "temperature": {"worker": WORKER_TEMPERATURE, "judge": cfg.temp.T_select},
                    "depth": c["depth"]},
         "warnings": warnings,
     }

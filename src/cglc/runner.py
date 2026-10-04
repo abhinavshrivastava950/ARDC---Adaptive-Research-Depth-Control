@@ -261,7 +261,10 @@ class Runner:
                 process_complete=proc_done,
                 evidence_sufficient=j.evidence_sufficient,
                 answer_conforms=j.answer_conforms,
-                blocker_present=bool(blocker) or j.blocker_present,
+                # A worker's own 'blocker' claim triggers a checkpoint, but the judge's reading of the
+                # evidence decides: if every requirement is supported, a retrieval miss reported by the
+                # worker is not a reason to refuse.
+                blocker_present=bool(j.blocker_present) or (bool(blocker) and not j.evidence_sufficient),
             )
             auth = self.authorizer.authorize(gates, contract, ledger, ckpt)
             ranked = rank_actions(j.action_features, self.cfg, rho, rem,

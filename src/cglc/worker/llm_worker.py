@@ -163,9 +163,12 @@ class LLMDocumentWorker(DocumentWorker):
         note = (f"\nCONTROLLER NOTE (why the last check did not pass; use it to decide what to "
                 f"re-check or change, and fix your draft if it is wrong):\n{self.controller_note}\n"
                 if self.controller_note else "")
+        prefs = (f"PREFERENCES (nice to have, not requirements): {self.contract.soft_prefs}\n"
+                 if self.contract.soft_prefs else "")
         return (
             f"TASK GOAL: {self.contract.goal}\n"
             f"ANSWER SCHEMA: {self.contract.answer_schema or 'free-form, concise'}\n"
+            f"{prefs}"
             f"CONTROLLER INTENT: {intent}\n"
             f"TARGET GAPS:\n{gaps}\n{note}\nCURRENT DRAFT:\n{draft or '(none yet)'}"
         )
