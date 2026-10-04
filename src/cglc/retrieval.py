@@ -53,6 +53,21 @@ class BM25Index:
     def __len__(self) -> int:
         return len(self.chunks)
 
+    def openings(self, per_doc: int = 2, max_docs: int = 3) -> List[Chunk]:
+        """The first chunks of the first documents. Overview questions ("what is X")
+        are usually answered near the start, where a keyword search on the subject's
+        own name (which appears everywhere) ranks poorly."""
+        out: List[Chunk] = []
+        seen_docs: List[str] = []
+        for c in self.chunks:
+            if c.source_id not in seen_docs:
+                if len(seen_docs) >= max_docs:
+                    break
+                seen_docs.append(c.source_id)
+            if sum(1 for o in out if o.source_id == c.source_id) < per_doc:
+                out.append(c)
+        return out
+
     def get(self, chunk_id: str) -> Chunk | None:
         return self._by_id.get(chunk_id)
 

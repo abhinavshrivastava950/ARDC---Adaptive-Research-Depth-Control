@@ -124,9 +124,11 @@ def _clean_request(req: Dict[str, Any]) -> Dict[str, Any]:
 class _DeadlineWorker(DocumentWorker):
     def __init__(self, inner: DocumentWorker, deadline: float) -> None:
         self.inner, self.deadline = inner, deadline
+        self.hit = False
 
     def act(self, intent, target_gaps, allowed_classes, draft) -> WorkerResult:
         if time.time() > self.deadline:
+            self.hit = True
             return WorkerResult(observations=[], draft=draft,
                                 blocker="time limit for this demo run reached",
                                 detail={"cost": {"tool_calls": 0.0}})
@@ -148,6 +150,7 @@ class _DeadlineJudge:
     def __init__(self, inner, deadline: float) -> None:
         self.inner, self.deadline = inner, deadline
         self._late = False
+        self.hit = False
 
     @property
     def last_tokens(self):
@@ -159,7 +162,9 @@ class _DeadlineJudge:
     def __call__(self, contract, ledger, draft) -> Judgment:
         self._late = time.time() > self.deadline
         if self._late:
+            self.hit = True
             return Judgment(infeasible=True, blocker_present=True,
+                            blocker_reason="time limit for this run reached (not an evidence failure)",
                             rationale="time limit for this demo run reached",
                             progress_label="UNKNOWN", direction_label="UNKNOWN",
                             open_gaps=[o.obligation_id for o in contract.evidence_obligations])
@@ -202,6 +207,10 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
                         "controller behaves; it does not understand the documents.")
     else:
         llm = llm_factory(provider, api_key=c["api_key"], model=c["model"])
+        try:
+            llm.deadline = deadline  # lets the client fail fast instead of sleeping past the cap
+        except Exception:
+            pass
         use_rag = (c["mode"] == "rag"
                    or (c["mode"] == "auto" and total_chars > FULL_CONTEXT_CHARS[provider]))
         mode = "rag" if use_rag else "full"
@@ -222,12 +231,19 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
             unmet = [] if set(docs) <= inner.docs_read else ["proc-0"]
             return (not unmet, unmet)
 
-    runner = Runner(cfg=cfg, judge=_DeadlineJudge(judge, deadline),
+    djudge = _DeadlineJudge(judge, deadline)
+    runner = Runner(cfg=cfg, judge=djudge,
                     max_checkpoints=max_ck, harvest_receipts=harvest)
     res = runner.run(contract, WorkerAdapter(worker, trace), ledger, trace,
                      process_check=process_check)
-    return _serialize(c, mode, contract, ledger, trace, inner, res, cfg, warnings,
-                      time.time() - started, len(docs), total_chars)
+    out = _serialize(c, mode, contract, ledger, trace, inner, res, cfg, warnings,
+                     time.time() - started, len(docs), total_chars)
+    out["time_limit_hit"] = bool(worker.hit or djudge.hit
+                                 or getattr(locals().get("llm"), "deadline_hit", False))
+    if out["time_limit_hit"] and out["decision"] != "ALLOW_FINALIZE":
+        out["blocked_condition"] = (f"time limit reached (hosted runs are capped at ~{limit:.0f}s); "
+                                    "this is a speed/rate-limit stop, not proof the evidence is missing")
+    return out
 
 
 def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,

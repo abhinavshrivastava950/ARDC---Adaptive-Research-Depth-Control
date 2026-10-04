@@ -72,6 +72,10 @@ class RAGDocumentWorker(LLMDocumentWorker):
         hits = self.index.search(query, self.top_k, exclude)
         if not hits:
             hits = self.index.search(self._fallback_query(target_gaps), self.top_k, exclude)
+        if not self.seen_chunks:
+            # First step: also read each document's opening, where definitions live.
+            have = {h.chunk_id for h in hits}
+            hits = [c for c in self.index.openings(per_doc=1) if c.chunk_id not in have] + hits
         self.seen_chunks.update(h.chunk_id for h in hits)
 
         passages = "\n\n".join(

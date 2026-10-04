@@ -242,12 +242,16 @@ function render(r) {
   // 1. verdict
   const [dTitle, dMeaning] = DECISION[r.decision] || [r.decision, ""];
   const vclass = approved ? "v-ok" : r.decision === "ASK_USER" ? "v-ask" : "v-stop";
-  const v = el("div", { class: `r-verdict ${vclass}`, role: "status" },
-    el("h3", { text: approved ? "✓ Approved: the controller let this answer through" : r.decision === "ASK_USER" ? "Needs your input" : "✕ Not approved: the controller stopped honestly" }),
+  const timedOut = !approved && r.time_limit_hit;   // stopped by speed/rate limits, not by missing evidence
+  const v = el("div", { class: `r-verdict ${timedOut ? "v-ask" : vclass}`, role: "status" },
+    el("h3", { text: approved ? "✓ Approved: the controller let this answer through"
+      : timedOut ? "⏱ Stopped by the time limit (not by missing evidence)"
+      : r.decision === "ASK_USER" ? "Needs your input" : "✕ Not approved: the controller stopped honestly" }),
     el("p", { text: approved
       ? `All five gates passed after ${nck} checkpoint${nck === 1 ? "" : "s"}.`
+      : timedOut ? "The run ran out of time (usually the AI provider's rate limit), so no verdict on the evidence was reached. Try depth “Quick”, a faster model (e.g. openai/gpt-oss-20b), a smaller document, or run it locally with python -m cglc.web."
       : `${dTitle}: ${dMeaning} Below is the best draft so far, clearly marked unapproved.` }));
-  const why = (r.reasons || []).filter(Boolean);
+  const why = (timedOut ? [] : (r.reasons || [])).filter(Boolean);
   if (!approved && (why.length || r.blocked_condition)) {
     const ul = el("ul");
     if (r.blocked_condition) ul.append(el("li", { text: r.blocked_condition }));

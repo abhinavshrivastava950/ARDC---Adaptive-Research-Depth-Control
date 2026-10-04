@@ -106,7 +106,7 @@ For each evidence obligation give:
 
 The draft is allowed to paraphrase: SUPPORTED means a cited span states or directly implies the claim, not that the draft repeats the span word for word. Be skeptical: fluent text without a matching span is not evidence. When unsure, choose the lower status.
 
-Also report: answer_conforms (the draft follows the answer schema and is usable); needs_user (only the user can supply something required); infeasible (the documents cannot contain what is needed, so more work cannot help; use rarely); blocker (short reason or empty); has_alternative (an untried part or angle of the documents plausibly helps); direction (PRODUCTIVE, LOW_YIELD or VERIFY_NEEDED).
+Also report: answer_conforms (true when the draft is non-empty and actually addresses the goal; do NOT mark it false for citation placement, formatting, style or length, those are never a reason to refuse); needs_user (only the user can supply something required); infeasible (the documents cannot contain what is needed, so more work cannot help; use rarely); blocker (short reason or empty); has_alternative (an untried part or angle of the documents plausibly helps); direction (PRODUCTIVE, LOW_YIELD or VERIFY_NEEDED).
 
 For each possible next action (CONTINUE the current direction, VERIFY a weak or contested claim, REDIRECT to a different direction) estimate: progress (LOW, MEDIUM, HIGH expected contract-relevant progress), and four numbers from 0 to 1: verify_weak_claim, move_off_stalled_direction, target_open_gap, repeat_risk.
 
@@ -262,6 +262,7 @@ class LLMJudge:
             needs_user=bool(d.get("needs_user")),
             infeasible=bool(d.get("infeasible")),
             blocker_present=bool(blocker),
+            blocker_reason=blocker,
             weak_or_contested=contested or direction == "VERIFY_NEEDED",
             has_alternative=bool(d.get("has_alternative")),
             progress_label="COMPLETE" if sufficient else

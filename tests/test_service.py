@@ -288,3 +288,66 @@ def test_groq_waits_for_token_window_instead_of_hitting_429():
                     http=_http([resp(7900), resp(7800)], []))
     g2.complete_json("s", "u", SCHEMA); g2.complete_json("s", "u", SCHEMA)
     assert len(sleeps) == 1
+
+
+def test_groq_pacing_waits_only_for_the_shortfall_not_the_full_reset():
+    now = [100.0]
+    sleeps = []
+
+    def sleep(s):
+        sleeps.append(s)
+        now[0] += s
+
+    def resp(rem):
+        r = _resp('{"ok": true}')
+        return r[0], {"x-ratelimit-remaining-tokens": str(rem), "x-ratelimit-limit-tokens": "6000",
+                      "x-ratelimit-reset-tokens": "50s"}, r[2]
+
+    g = GroqClient(api_key="gsk_k1234567", sleep=sleep, clock=lambda: now[0],
+                   http=_http([resp(1000), resp(5000)], []))
+    g.complete_json("s", "u" * 3000, SCHEMA)      # 1000 left, refill 100 tokens/s
+    g.complete_json("s", "u" * 3000, SCHEMA)      # needs ~2500 -> ~15 s, far less than the 50 s reset
+    assert len(sleeps) == 1 and 10 < sleeps[0] < 20
+
+
+def test_groq_fails_fast_when_the_wait_would_overrun_the_deadline():
+    now = [100.0]
+
+    def resp(rem):
+        r = _resp('{"ok": true}')
+        return r[0], {"x-ratelimit-remaining-tokens": str(rem), "x-ratelimit-limit-tokens": "6000",
+                      "x-ratelimit-reset-tokens": "50s"}, r[2]
+
+    g = GroqClient(api_key="gsk_k1234567", sleep=lambda s: now.__setitem__(0, now[0] + s),
+                   clock=lambda: now[0], http=_http([resp(100), resp(5000)], []))
+    g.deadline = 105.0                              # only 5 s left in this run
+    g.complete_json("s", "u" * 3000, SCHEMA)
+    with pytest.raises(LLMError, match="out of time"):
+        g.complete_json("s", "u" * 3000, SCHEMA)
+    assert g.deadline_hit is True
+
+
+def test_reasoning_effort_low_only_for_gpt_oss_models():
+    log = []
+    GroqClient(model="openai/gpt-oss-120b", api_key="gsk_k1234567",
+               http=_http([_resp('{"ok": true}')], log)).complete_json("s", "u", SCHEMA)
+    GroqClient(model="qwen/qwen3.8-27b", api_key="gsk_k1234567",
+               http=_http([_resp('{"ok": true}')], log)).complete_json("s", "u", SCHEMA)
+    assert log[0][3]["reasoning_effort"] == "low" and "reasoning_effort" not in log[1][3]
+
+
+def test_time_limit_is_reported_as_such_and_not_as_missing_evidence():
+    r = service.run_task({"provider": "offline", "goal": "remote work", "documents": DOCS},
+                         time_limit=-1)
+    assert r["decision"] == "REPORT_BLOCKED" and r["time_limit_hit"] is True
+    assert "time limit" in r["blocked_condition"] and "not proof" in r["blocked_condition"]
+    ok = service.run_task({"provider": "offline", "goal": "remote work days approval",
+                           "documents": DOCS})
+    assert ok["time_limit_hit"] is False
+
+
+def test_rag_reads_each_documents_opening_on_the_first_step_and_overviews_work():
+    from cglc.retrieval import BM25Index
+    idx = BM25Index({"big": "Overview: Acme is a payments platform.\n\n" + "\n\n".join(
+        f"Section {i}: Acme acme acme detail {i}." for i in range(30))})
+    assert idx.openings(per_doc=1)[0].chunk_id == "big#c0"

@@ -111,3 +111,15 @@ Both changes were made after seeing that item, so the seed-0 items are
 rows from before the changes are discarded (kept locally as
 `results/pilot_v0_discarded.jsonl`); baseline rows are unaffected by the
 changes and were kept. No result under this protocol has been reported yet.
+
+**2026-10-04, judge calibration and pacing (before any reported result).**
+A real user run showed the controller refusing a correct, evidenced answer
+because the judge set `answer_conforms = false` over citation placement
+(formatting, not evidence), and then losing the remaining time to rate-limit
+waiting. Changes: the judge prompt now treats formatting/style/length as never
+grounds to refuse; the Groq client waits only for the token shortfall (it was
+waiting for the full bucket reset), fails fast when a wait would overrun the
+caller's deadline, and uses `reasoning_effort: low` on gpt-oss models (about 4x
+fewer hidden reasoning tokens); RAG reads each document's opening on its first
+step. Controller rows from earlier pilots are superseded and must be re-run;
+the pilot was stopped. Still no reported result.

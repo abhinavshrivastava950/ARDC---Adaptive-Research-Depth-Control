@@ -37,6 +37,7 @@ class Judgment:
     rationale + receipt ids)."""
 
     evidence_sufficient: bool = False
+    blocker_reason: str = ""  # human-readable cause when blocker_present
     process_complete: bool = False
     answer_conforms: bool = False
     needs_user: bool = False
@@ -287,7 +288,7 @@ class Runner:
                 if dead:
                     blocked_condition = "budget exhausted: " + ",".join(dead)
                 elif blocker or j.blocker_present:
-                    blocked_condition = "material blocker: " + (blocker or "judge-flagged")
+                    blocked_condition = "material blocker: " + (blocker or j.blocker_reason or "judge-flagged")
                 else:
                     blocked_condition = "no feasible non-terminal action"
 

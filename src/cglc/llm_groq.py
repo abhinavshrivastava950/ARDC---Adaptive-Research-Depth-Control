@@ -78,7 +78,8 @@ class GroqClient:
                  timeout: float = 45.0, http: Optional[HttpFn] = None,
                  sleep: Callable[[float], None] = time.sleep,
                  max_rate_retries: int = 3, max_wait: float = 10.0,
-                 pace: bool = True, clock: Callable[[], float] = time.time) -> None:
+                 pace: bool = True, clock: Callable[[], float] = time.time,
+                 reasoning_effort: Optional[str] = "auto") -> None:
         key = api_key or os.environ.get(GROQ_KEY_ENV)
         if not key:
             raise LLMConfigError(_HINT)
@@ -98,6 +99,17 @@ class GroqClient:
         self._clock = clock
         self._tokens_left: Optional[float] = None
         self._window_resets_at = 0.0
+        self._noted_at = 0.0
+        self._limit: Optional[float] = None  # tokens per minute for this model/plan
+        # Absolute time (epoch seconds) by which the caller needs an answer. Waits
+        # that would overrun it fail fast instead of silently eating the budget.
+        self.deadline: Optional[float] = None
+        self.deadline_hit = False
+        # gpt-oss are reasoning models: 'low' effort cuts hidden reasoning tokens
+        # ~4x (fewer rate-limit waits). Other models are left at their default.
+        if reasoning_effort == "auto":
+            reasoning_effort = "low" if self.model.startswith("openai/gpt-oss") else None
+        self.reasoning_effort = reasoning_effort
 
     def __repr__(self) -> str:  # never expose credentials
         return f"GroqClient(model={self.model!r})"
@@ -114,16 +126,47 @@ class GroqClient:
             self._tokens_left = float(rem)
         except ValueError:
             return
-        self._window_resets_at = self._clock() + parse_duration(hdrs.get("x-ratelimit-reset-tokens", ""))
+        lim = hdrs.get("x-ratelimit-limit-tokens")
+        if lim:
+            try:
+                self._limit = float(lim)
+            except ValueError:
+                pass
+        now = self._clock()
+        self._noted_at = now
+        self._window_resets_at = now + parse_duration(hdrs.get("x-ratelimit-reset-tokens", ""))
+
+    def _wait(self, secs: float) -> None:
+        """Sleep, unless that would overrun the caller's deadline."""
+        if self.deadline is not None and self._clock() + secs > self.deadline - 1.0:
+            self.deadline_hit = True
+            left = max(0.0, self.deadline - self._clock())
+            raise LLMError(f"out of time: Groq's rate limit needs ~{secs:.0f}s more but this run has "
+                           f"only {left:.0f}s left (try a smaller document, Quick depth, or run locally)")
+        self._sleep(secs)
 
     def _pace(self, prompt_chars: int) -> None:
-        """Sleep until the token window resets if the next call would not fit."""
+        """Wait just long enough for the token bucket to refill what this call needs.
+
+        Groq refills continuously (limit/60 tokens per second), so the wait is the
+        shortfall divided by that rate, not the time until the bucket is full.
+        """
         if not self.pace or self._tokens_left is None:
             return
         need = prompt_chars / 3.0 + 1500  # prompt estimate + room for reasoning/output
-        wait = self._window_resets_at - self._clock()
-        if need > self._tokens_left and 0 < wait:
-            self._sleep(min(wait + 0.25, 65.0))
+        now = self._clock()
+        rate = (self._limit / 60.0) if self._limit else None
+        left = self._tokens_left
+        if rate:
+            left = min(self._limit, left + rate * max(0.0, now - self._noted_at))
+        if need <= left:
+            return
+        full = max(0.0, self._window_resets_at - now)
+        wait = (need - left) / rate if rate else full
+        if full:
+            wait = min(wait, full)
+        if wait > 0:
+            self._wait(wait + 0.25)
             self._tokens_left = None
 
     def complete_json(self, system, user: str, schema: Dict[str, Any],
@@ -154,6 +197,8 @@ class GroqClient:
             }
             if temperature is not None:
                 payload["temperature"] = float(temperature)
+            if self.reasoning_effort:
+                payload["reasoning_effort"] = self.reasoning_effort
             self._pace(len(sys_text) + sum(len(m["content"]) for m in messages[1:]))
             status, hdrs, text = self._http(
                 "POST", f"{GROQ_BASE}/chat/completions", self._headers(),
@@ -223,11 +268,11 @@ class GroqClient:
                     wait = float(hdrs.get("retry-after", "2"))
                 except ValueError:
                     wait = 2.0
-                self._sleep(min(max(wait, 0.5), self.max_wait))
+                self._wait(min(max(wait, 0.5), self.max_wait))
                 continue
             if status >= 500 and server_retries < 1:
                 server_retries += 1
-                self._sleep(1.0)
+                self._wait(1.0)
                 continue
             raise LLMError(f"Groq API error {status}: {msg}")
 
