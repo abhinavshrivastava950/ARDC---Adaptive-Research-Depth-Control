@@ -165,10 +165,13 @@ class LLMDocumentWorker(DocumentWorker):
                 if self.controller_note else "")
         prefs = (f"PREFERENCES (nice to have, not requirements): {self.contract.soft_prefs}\n"
                  if self.contract.soft_prefs else "")
+        rules = ("RULES THE ANSWER MUST FOLLOW (declared by the contract; nothing checks them for you):\n"
+                 + "\n".join(f"- {r}" for r in self.contract.conduct_rules) + "\n"
+                 if self.contract.conduct_rules else "")
         return (
             f"TASK GOAL: {self.contract.goal}\n"
             f"ANSWER SCHEMA: {self.contract.answer_schema or 'free-form, concise'}\n"
-            f"{prefs}"
+            f"{rules}{prefs}"
             f"CONTROLLER INTENT: {intent}\n"
             f"TARGET GAPS:\n{gaps}\n{note}\nCURRENT DRAFT:\n{draft or '(none yet)'}"
         )

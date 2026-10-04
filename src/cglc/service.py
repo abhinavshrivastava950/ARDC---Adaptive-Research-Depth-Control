@@ -253,6 +253,19 @@ def contract_notes(contract: TaskContract) -> List[str]:
     if contract.blockers:
         notes.append("blockers are given to the judge as conditions to watch for; this is a model "
                      "judgement, not a code check.")
+    if contract.conduct_rules:
+        notes.append("conduct rules are shown to the worker and the judge; NOT machine-checked "
+                     "(no code can verify them in a document run): " + "; ".join(contract.conduct_rules))
+    if any(o.conditional for o in contract.evidence_obligations):
+        notes.append("conditional obligations may be judged not applicable by the judge when their "
+                     "own condition does not hold (a model judgement).")
+    bp = contract.budget_policy
+    if "structural_stall_parameters" in bp:
+        s = bp["structural_stall_parameters"]
+        notes.append(f"stall trigger set from the contract: tau_J={s['jaccard_threshold']}, "
+                     f"tau_U={s['unique_passage_rate_threshold']}, p={s['consecutive_rounds']}.")
+    if "lease_action_caps" in bp:
+        notes.append(f"lease sizes set from the contract: {bp['lease_action_caps']}.")
     if contract.budget_policy:
         notes.append("budget_policy max_tool_calls / max_tokens / max_seconds set this run's limits "
                      "(capped by the server); other keys are recorded only.")
@@ -338,6 +351,15 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
     cfg = dataclasses.replace(
         DEFAULT_CONFIG, limits=BudgetLimits(tool_calls=float(tools), tokens=float(tokens),
                                             wall_clock=limit * 2))
+    sp = bp.get("structural_stall_parameters")
+    if sp:  # CGDP stall trigger settings from the contract
+        cfg = dataclasses.replace(cfg, stagnation=dataclasses.replace(
+            cfg.stagnation, tau_J=float(sp["jaccard_threshold"]),
+            tau_U=float(sp["unique_passage_rate_threshold"]), p=int(sp["consecutive_rounds"])))
+    lc = bp.get("lease_action_caps")
+    if lc:
+        cfg = dataclasses.replace(cfg, lease=dataclasses.replace(
+            cfg.lease, SHORT=lc["SHORT"], STANDARD=lc["STANDARD"], EXTENDED=lc["EXTENDED"]))
     trace = Trace()
     ledger = EvidenceLedger([o.obligation_id for o in contract.evidence_obligations])
 
@@ -377,6 +399,10 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
                      process_check=process_check)
     out = _serialize(c, mode, contract, ledger, trace, inner, res, cfg, warnings,
                      time.time() - started, len(docs), total_chars)
+    na = getattr(judge, "na", set())
+    for e in out["evidence"]:
+        if e["obligation_id"] in na:   # the judge's verdict at the last checkpoint
+            e["status"] = "NOT_APPLICABLE"
     out["contract"]["json"] = contract.to_dict()
     out["contract"]["notes"] = contract_notes(contract)
     out["time_limit_hit"] = bool(worker.hit or djudge.hit
@@ -438,6 +464,7 @@ def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,
         "blocked_condition": last.blocked_condition if last else "",
         "checkpoints": checkpoints, "steps": steps, "evidence": evidence,
         "contract": {"goal": contract.goal, "provenance": contract.provenance,
+                     "contract_id": contract.contract_id, "conduct_rules": contract.conduct_rules,
                      "duties": [d.description for d in contract.process_duties],
                      "obligations": [o.proposition for o in contract.evidence_obligations]},
         "docs": {"count": n_docs, "chars": total_chars,

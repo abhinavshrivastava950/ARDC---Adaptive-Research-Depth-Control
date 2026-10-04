@@ -41,6 +41,37 @@ def _kind(v: Any) -> str:
     return "an object" if isinstance(v, dict) else type(v).__name__
 
 
+def validate_controller_settings(budget: Dict[str, Any]) -> None:
+    """Optional controller settings a contract's budget_policy may carry.
+
+    ``structural_stall_parameters`` = {jaccard_threshold, unique_passage_rate_threshold,
+    consecutive_rounds} (the CGDP stall trigger) and ``lease_action_caps`` = {SHORT,
+    STANDARD, EXTENDED}. Ranges are checked here; the server may still clamp them.
+    """
+    sp = budget.get("structural_stall_parameters")
+    if sp is not None:
+        if not isinstance(sp, dict) or set(sp) != {"jaccard_threshold", "unique_passage_rate_threshold",
+                                                    "consecutive_rounds"}:
+            raise ValueError("budget_policy.structural_stall_parameters must be an object with exactly "
+                             "jaccard_threshold, unique_passage_rate_threshold and consecutive_rounds")
+        for k in ("jaccard_threshold", "unique_passage_rate_threshold"):
+            v = sp[k]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not (math.isfinite(v) and 0 <= v <= 1):
+                raise ValueError(f"budget_policy.structural_stall_parameters.{k} must be a number from 0 to 1")
+        n = sp["consecutive_rounds"]
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= 10:
+            raise ValueError("budget_policy.structural_stall_parameters.consecutive_rounds must be 1 to 10")
+    lc = budget.get("lease_action_caps")
+    if lc is not None:
+        if not isinstance(lc, dict) or set(lc) != {"SHORT", "STANDARD", "EXTENDED"}:
+            raise ValueError("budget_policy.lease_action_caps must be an object with exactly SHORT, STANDARD, EXTENDED")
+        for k, v in lc.items():
+            if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 9:
+                raise ValueError(f"budget_policy.lease_action_caps.{k} must be a whole number from 1 to 9")
+        if not lc["SHORT"] <= lc["STANDARD"] <= lc["EXTENDED"]:
+            raise ValueError("budget_policy.lease_action_caps must satisfy SHORT <= STANDARD <= EXTENDED")
+
+
 @dataclass
 class ProcessDuty:
     duty_id: str
@@ -55,6 +86,9 @@ class EvidenceObligation:
     proposition: str
     weight: float = 1.0  # recorded; not used by the V1 decision yet
     required_receipts: int = 1  # distinct supporting spans needed before SUPPORTED is accepted
+    # A conditional obligation ("... when relevant") may be marked not-applicable by the judge
+    # when its own condition clearly does not hold for this task.
+    conditional: bool = False
 
 
 @dataclass
@@ -69,6 +103,9 @@ class TaskContract:
     budget_policy: Dict[str, Any] = field(default_factory=dict)
     provenance: str = "benchmark/user-confirmed"
     revision: int = 1
+    # Rules the answer must follow that no code can verify (conduct rules such as "browse
+    # only"). Shown to the worker and the judge; reported as NOT machine-checked.
+    conduct_rules: List[str] = field(default_factory=list)
 
     @staticmethod
     def create(
@@ -103,8 +140,12 @@ class TaskContract:
         """
         if not isinstance(d, dict):
             raise ValueError(f"the contract must be a JSON object (like {{\"goal\": ...}}), but got {_kind(d)}")
+        if "contract_schema" in d:  # a versioned external format: strict importer
+            from .contract_import import from_cglc_v1
+            return from_cglc_v1(d)
         allowed = {"goal", "process_duties", "evidence_obligations", "soft_prefs", "blockers",
-                   "answer_schema", "budget_policy", "revision", "contract_id", "provenance"}
+                   "answer_schema", "budget_policy", "revision", "contract_id", "provenance",
+                   "conduct_rules"}
         unknown = sorted(set(d) - allowed)
         if unknown:
             shown = sorted(allowed - {"contract_id", "provenance"})
@@ -140,6 +181,11 @@ class TaskContract:
             if not _ID.match(t):
                 raise ValueError(f"{name} may use only letters, digits, '_', '-' and '.' (max 40)")
             return t
+
+        def _flag(v: Any, name: str) -> bool:
+            if not isinstance(v, bool):
+                raise ValueError(f"{name} must be true or false, but got {_kind(v)}")
+            return v
 
         def finite_positive(v: Any) -> bool:
             return (isinstance(v, (int, float)) and not isinstance(v, bool)
@@ -187,7 +233,8 @@ class TaskContract:
                 obligation_id=ident(x.get("obligation_id") or f"ev-{i}",
                                     f"evidence_obligations[{i}].obligation_id"),
                 proposition=text(x.get("proposition"), f"evidence_obligations[{i}].proposition", 400),
-                weight=float(w), required_receipts=rr))
+                weight=float(w), required_receipts=rr,
+                conditional=_flag(x.get("conditional", False), f"evidence_obligations[{i}].conditional")))
 
         blockers = [text(b, f"blockers[{i}]", 300)
                     for i, b in enumerate(items(d.get("blockers", []), "blockers", 10))]
@@ -196,6 +243,9 @@ class TaskContract:
             v = budget.get(k)
             if k in budget and not finite_positive(v):
                 raise ValueError(f"budget_policy.{k} must be a positive, finite number")
+        validate_controller_settings(budget)
+        conduct = [text(r, f"conduct_rules[{i}]", 300)
+                   for i, r in enumerate(items(d.get("conduct_rules", []), "conduct_rules", 10))]
         rev = d.get("revision", 1)
         if not whole(rev, 1):
             raise ValueError("revision must be a whole number >= 1")
@@ -206,7 +256,7 @@ class TaskContract:
             process_duties=duties, evidence_obligations=obls,
             soft_prefs=small_obj(d.get("soft_prefs", {}), "soft_prefs"), blockers=blockers,
             answer_schema=small_obj(d.get("answer_schema", {}), "answer_schema"),
-            budget_policy=budget, provenance=provenance, revision=rev)
+            budget_policy=budget, provenance=provenance, revision=rev, conduct_rules=conduct)
         problems = c.validate()
         if problems:
             raise ValueError("; ".join(problems))
@@ -227,9 +277,11 @@ class TaskContract:
             ],
             "evidence_obligations": [
                 {"obligation_id": o.obligation_id, "proposition": o.proposition,
-                 "weight": o.weight, "required_receipts": o.required_receipts}
+                 "weight": o.weight, "required_receipts": o.required_receipts,
+                 "conditional": o.conditional}
                 for o in self.evidence_obligations
             ],
+            "conduct_rules": self.conduct_rules,
             "soft_prefs": self.soft_prefs,
             "blockers": self.blockers,
             "answer_schema": self.answer_schema,

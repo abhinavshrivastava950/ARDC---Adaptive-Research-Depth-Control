@@ -122,6 +122,8 @@ class Runner:
 
     def _lease(self, intent: str, category: str, gaps) -> Lease:
         lease = Lease.make(intent, category, gaps)
+        # Sizes come from the config (a contract's lease_action_caps may change them).
+        lease.action_cap = int(getattr(self.cfg.lease, category.upper(), lease.action_cap))
         if self.fixed_lease:
             lease.action_cap = int(self.fixed_lease)
         return lease

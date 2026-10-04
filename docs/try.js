@@ -193,6 +193,31 @@ function fillContract() {
   $("#t-contract").value = JSON.stringify(compileForm(), null, 2);
   $("#t-contract-msg").textContent = "Filled from the simple form. Edit anything, then run.";
 }
+// A file may hold several contracts (a JSON list): let the user pick one.
+let contractList = [];
+function showPicker(list) {
+  contractList = list;
+  const sel = $("#t-contract-pick"); sel.textContent = "";
+  list.forEach((c, i) => sel.append(el("option", { value: String(i),
+    text: `${i + 1}. ${(c && c.contract_id) || "contract"}: ${String((c && c.goal) || "").slice(0, 70)}` })));
+  $("#t-contract-pickwrap").hidden = false;
+  chooseContract(0);
+  $("#t-contract-msg").textContent = `This file has ${list.length} contracts. Pick one above, then run.`;
+}
+function chooseContract(i) { $("#t-contract").value = JSON.stringify(contractList[i], null, 2); }
+function isContractList(v) { return Array.isArray(v) && v.length > 0 && v.every(x => x && typeof x === "object" && !Array.isArray(x)); }
+async function loadContractFile(file) {
+  try {
+    if (file.size > 2e6) return showStatus("That file is too large for a contract (2 MB max).", true);
+    const v = JSON.parse(await file.text());
+    if (isContractList(v)) showPicker(v);
+    else if (v && typeof v === "object" && !Array.isArray(v)) {
+      $("#t-contract-pickwrap").hidden = true; $("#t-contract").value = JSON.stringify(v, null, 2);
+      $("#t-contract-msg").textContent = `Loaded ${file.name}.`;
+    } else showStatus("The file must contain a contract object or a list of contract objects.", true);
+  } catch (e) { showStatus(`${file.name} is not valid JSON: ${e.message}`, true); }
+}
+
 function applyContractMode() {
   const json = contractMode() === "json";
   $("#t-simple").hidden = json; $("#t-jsonwrap").hidden = !json;
@@ -207,6 +232,7 @@ async function run() {
   if (jsonMode) {
     try { contract = JSON.parse($("#t-contract").value); }
     catch (e) { return showStatus("The contract is not valid JSON: " + e.message, true); }
+    if (isContractList(contract)) { showPicker(contract); return showStatus("That is a list of contracts: pick one above, then press Run.", true); }
     if (!contract || typeof contract !== "object" || Array.isArray(contract)) return showStatus("The contract must be a JSON object.", true);
   }
   const goal = jsonMode ? "" : $("#t-goal").value.trim();
@@ -432,6 +458,8 @@ function init() {
   if (!$("#t-obl").value.trim()) $("#t-obl").value = DEFAULT_REQ;
   document.querySelectorAll("input[name=t-cmode]").forEach(i => i.addEventListener("change", applyContractMode));
   $("#t-contract-fill").addEventListener("click", fillContract);
+  $("#t-contract-file").addEventListener("change", e => { if (e.target.files[0]) loadContractFile(e.target.files[0]); e.target.value = ""; });
+  $("#t-contract-pick").addEventListener("change", e => chooseContract(Number(e.target.value)));
   applyProvider(); renderDocs();
   fetch(API + "/api/health").then(r => r.json()).then(() => {}).catch(() => {
     $("#t-offline-note").hidden = false; });

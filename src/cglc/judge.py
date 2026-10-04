@@ -56,6 +56,7 @@ JUDGE_SCHEMA: Dict[str, Any] = {
                     "status": {"type": "string",
                                "enum": ["UNSEEN", "PARTIAL", "SUPPORTED"]},
                     "contradicted": {"type": "boolean"},
+                    "not_applicable": {"type": "boolean"},
                     "receipts": {
                         "type": "array",
                         "items": {
@@ -104,7 +105,9 @@ For each evidence obligation give:
 - contradicted: true if some span materially contradicts the obligation or the draft's claim about it.
 - receipts: the spans you rely on. span_id MUST be copied from the provided span list; never invent one. relation is supports or contradicts. strength is 0 to 1; use 0.8 or more only when the span directly states the claim. claim is the proposition the span bears on.
 
-The draft is allowed to paraphrase: SUPPORTED means a cited span states or directly implies the claim, not that the draft repeats the span word for word. Be skeptical: fluent text without a matching span is not evidence. When unsure, choose the lower status.
+The draft is allowed to paraphrase: SUPPORTED means a cited span states or directly implies the claim, not that the draft repeats the span word for word. Some obligations are marked conditional (their wording says "when relevant" or "if visible"). For a conditional obligation only, set not_applicable to true when its own condition clearly does not hold for this task and nothing needs to be quoted; otherwise treat it like any other obligation. Never set not_applicable on an obligation that is not marked conditional.
+
+Be skeptical: fluent text without a matching span is not evidence. When unsure, choose the lower status.
 
 Also report: answer_conforms (true when the draft is non-empty and actually addresses the goal; do NOT mark it false for citation placement, formatting, style or length, those are never a reason to refuse); needs_user (only the user can supply something required); infeasible (the documents cannot contain what is needed, so more work cannot help; use rarely); blocker (short reason, or empty: report one ONLY if a blocker declared in the contract clearly holds or the documents clearly cannot supply what is needed; evidence that is merely missing, uncited or still to be found is NOT a blocker); has_alternative (an untried part or angle of the documents plausibly helps); direction (PRODUCTIVE, LOW_YIELD or VERIFY_NEEDED).
 
@@ -133,23 +136,28 @@ class LLMJudge:
         self.delta_map = delta_map or DEFAULT_DELTA_MAP
         self.max_tokens = max_tokens
         self.last_tokens: Optional[float] = None  # read by Runner for controller cost
+        self.na: set = set()  # conditional obligations judged not applicable at the last checkpoint
         self.failures = 0  # judge calls that failed closed (rate limit, refusal, bad JSON)
         self._n = 0
 
     # -- prompt --------------------------------------------------------
     def _user(self, contract: TaskContract, ledger: EvidenceLedger, draft: str) -> str:
-        obls = [{"obligation_id": o.obligation_id, "proposition": o.proposition}
+        obls = [{"obligation_id": o.obligation_id, "proposition": o.proposition,
+                 **({"conditional": True} if o.conditional else {})}
                 for o in contract.evidence_obligations]
         spans = [{"span_id": s.span_id, "source_id": s.source_id, "text": s.text}
                  for s in self.worker.evidence.values()]
         state = {oid: {"status": ledger.s[oid], "contradiction": ledger.c[oid]}
                  for oid in ledger.s}
+        rules = (f"DECLARED RULES the answer must follow (if the draft clearly breaks one, set "
+                 f"answer_conforms to false): {json.dumps(contract.conduct_rules)}\n"
+                 if contract.conduct_rules else "")
         blockers = (f"MATERIAL BLOCKERS declared by the contract (if one of these holds, say so in "
                     f"`blocker`): {json.dumps(contract.blockers)}\n" if contract.blockers else "")
         return (
             f"GOAL: {contract.goal}\n"
             f"ANSWER SCHEMA: {json.dumps(contract.answer_schema)}\n"
-            f"{blockers}"
+            f"{blockers}{rules}"
             f"EVIDENCE OBLIGATIONS: {json.dumps(obls)}\n"
             f"LEDGER STATE BEFORE THIS CHECKPOINT: {json.dumps(state)}\n\n"
             f"CITED SPANS (the only valid span_ids):\n{json.dumps(spans, indent=1)}\n\n"
@@ -174,6 +182,7 @@ class LLMJudge:
     def __call__(self, contract: TaskContract, ledger: EvidenceLedger,
                  draft: str) -> Judgment:
         self.last_tokens = None  # a failed call must not reuse the last cost
+        self.na = set()
         try:
             reply = self.llm.complete_json(
                 system_blocks(JUDGE_SYSTEM), self._user(contract, ledger, draft),
@@ -235,6 +244,10 @@ class LLMJudge:
                 contested = True
 
             claimed = entry.get("status")
+            if obl.conditional and entry.get("not_applicable") is True and not entry.get("contradicted"):
+                notes.append(f"{oid}: judged not applicable (conditional obligation)")
+                self.na.add(oid)
+                continue
             # distinct supporting spans on record for this obligation (contract: required_receipts)
             have = len({r.span_id for r in ledger.receipts.get(oid, []) if r.relation == "supports"})
             ok = (claimed == "SUPPORTED" and supports > 0

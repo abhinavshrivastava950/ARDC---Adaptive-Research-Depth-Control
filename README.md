@@ -246,6 +246,29 @@ Unknown fields, wrong types and impossible duties are rejected with a message. T
 provenance (`user-supplied (JSON contract)`); it is never taken from the input. The simple form compiles
 to the same structure.
 
+#### Importing `cglc-contract-v1` contracts (e.g. WebRider)
+
+A contract with `"contract_schema": "cglc-contract-v1"` is read by a second, equally strict parser
+(`src/cglc/contract_import.py`). That format describes a **web-browsing** task; this project is
+document-grounded, so the mapping is explicit and nothing is pretended:
+
+| In the file | Becomes |
+|---|---|
+| `goal` | `goal` |
+| `evidence_obligations` | evidence obligations (`Quoted evidence for: ...`); wording like "when relevant" / "if visible" makes the obligation *conditional* (the judge may mark it not applicable) |
+| `hard_task_constraints` | "must show / be / address / use / distinguish ..." become evidence obligations (each needs a quote); the rest ("must not ...", "must avoid ...", "must remain ...") become **conduct rules** |
+| `process_duties` (text) | **conduct rules**: shown to the worker and the judge, reported as *not machine-checked* (no code can verify "browse only" in a document run) |
+| `soft_preferences` | `soft_prefs` (shown to the worker, not enforced) |
+| `blockers` | `blockers` (watched by the judge) |
+| `answer_schema` (text) | `answer_schema` |
+| `budget_policy` | `runtime_budget_caps` become run limits (the server caps them); `structural_stall_parameters` and `lease_action_caps` are applied to the controller; other keys are recorded only |
+| `provenance`, `revision_id` | recorded in the provenance string as a *claim* by the input (the hash is not verified) |
+
+The site's "Contract as JSON" mode has a **Load a contract file** button; a file holding a list shows a
+picker. From the command line: `python examples/run_contract_file.py contracts.json <contract_id>
+doc1.txt doc2.txt` (bring your own key). The browsing itself is not done by this project: you supply the
+documents (for instance saved pages) that the contract's evidence must come from.
+
 ### Deploy (Vercel)
 
 `app.py` is a small Flask app (the API: `/api/run`, `/api/models`, `/api/health`); the demo site is

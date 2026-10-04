@@ -1,0 +1,44 @@
+{
+  "contract_schema": "cglc-contract-v1",
+  "contract_id": "demo-0001",
+  "revision_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "goal": "In the supplied documentation, find how CSS container queries are declared and give a minimal example. Note any missing information that could change the answer.",
+  "process_duties": [
+    "Browse only. Do not log in, purchase, or submit private forms."
+  ],
+  "hard_task_constraints": [
+    "must use the supplied documentation",
+    "must show syntax/example evidence",
+    "must show browser compatibility evidence if visible",
+    "must remain within public, non-logged-in browsing",
+    "must not purchase, book, message, or enter credentials"
+  ],
+  "evidence_obligations": [
+    "target page title/name",
+    "visible source or listing evidence",
+    "visible caveat, rating, date, version, or availability evidence when relevant"
+  ],
+  "soft_preferences": {
+    "persona_id": "explicit_constraint_control",
+    "prompt_rules": ["Do not invent hidden preferences."]
+  },
+  "blockers": [
+    "Ask or stop if the site requires login or the page is unavailable."
+  ],
+  "answer_schema": "short answer; evidence bullets; caveats; no irreversible action",
+  "budget_policy": {
+    "policy_version": "demo-policy",
+    "lease_action_caps": {"SHORT": 1, "STANDARD": 2, "EXTENDED": 4},
+    "checkpoint_triggers": ["worker requests finalization", "lease expires"],
+    "structural_stall_parameters": {
+      "jaccard_threshold": 0.6, "unique_passage_rate_threshold": 0.2, "consecutive_rounds": 2
+    },
+    "runtime_budget_caps": {
+      "worker_actions": 1000000, "controller_calls": 100000,
+      "total_tokens": 100000000, "runtime_seconds": 86400
+    },
+    "requires_runtime_configuration": false,
+    "configuration_note": "synthetic fixture"
+  },
+  "provenance": {"dataset": "example/example", "task_id": "demo-0001", "source_schema": "demo", "metadata_file": "x.json"}
+}

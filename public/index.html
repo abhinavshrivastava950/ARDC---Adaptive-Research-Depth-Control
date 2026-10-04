@@ -255,7 +255,11 @@
         <div class="t-field"><label for="t-contract">CONTRACT K (JSON)</label>
           <textarea id="t-contract" spellcheck="false" style="min-height:300px;font-family:var(--mono);font-size:12.5px;white-space:pre"></textarea></div>
         <div class="t-row"><button type="button" id="t-contract-fill">Fill from the simple form</button>
+          <label style="cursor:pointer"><span class="t-btnlike">Load a contract file (.json)</span><input id="t-contract-file" type="file" accept=".json,application/json" style="display:none"></label>
           <span class="t-note" id="t-contract-msg"></span></div>
+        <div class="t-field" id="t-contract-pickwrap" hidden><label for="t-contract-pick">THIS FILE HAS SEVERAL CONTRACTS: PICK ONE</label>
+          <select id="t-contract-pick"></select></div>
+        <p class="t-note">Two formats are accepted: the native one below, and <code>cglc-contract-v1</code> (set <code>"contract_schema": "cglc-contract-v1"</code>, e.g. the WebRider task contracts). Anything else is rejected.</p>
         <details class="t-adv" open><summary>What each field does</summary>
           <dl class="t-fields">
             <dt><code>goal</code> (g)</dt><dd>The question or task. Required.</dd>
