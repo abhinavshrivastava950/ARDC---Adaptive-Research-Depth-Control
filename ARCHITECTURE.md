@@ -45,6 +45,22 @@ boundaries / consequential events.
 6. Leases SHORT/STANDARD/EXTENDED = 1/3/5; stall/blocker/contradiction
    ends any lease early.
 
+## Leases, progress and retrieval (Sec 5.6, 6.1, 14.3)
+
+- Lease = `(intent, target_gap_ids, allowed_action_classes, action_cap, budget_cap, expected_progress_test)`
+  (`leases.py`). Size by policy `pick_lease_category` (`controller.py`): REDIRECT/VERIFY SHORT, near-final or
+  high-pressure CONTINUE SHORT, early-stage CONTINUE with >= 3 open items at low pressure EXTENDED, else STANDARD.
+  Thresholds and `budget_share` live in `LeaseConfig` and are logged.
+- Allowed classes (SEARCH/READ/VERIFY/ANSWER) are enforced by the worker at its tool boundary
+  (`rag_worker.py`) and independently checked by `WorkerAdapter` (`lease_violation`, Sec 7.2).
+- `budget_cap` ends a lease early; the finer reason (`action_cap`/`budget_cap`) is in the audit, the scheduler event
+  stays `lease_expiry` (the six Sec 5.1 events are unchanged).
+- Eff_support / Eff_resolve (Sec 14.3) are computed after the judge at every checkpoint, weighted by `w_i`, reported
+  separately in `DecisionRecord`, and each lease's structured progress test is evaluated against them.
+  `use_eff_in_delta` (Q&A Q3/Q4) caps CONTINUE's Delta at LOW for ranking only when a lease that acted moved neither.
+- Retrieval stays inside the worker (Sec 3.3): `retrieval.py` BM25 / hybrid (RRF), `embeddings.py` backends; chunk ids
+  are identical across retrievers, so the Sec 14.2 stall trigger is unaffected.
+
 ## Guarantees (Sec 7)
 
 `ALLOW = C_terminal & C_process & C_evidence & C_answer & !C_blocker`.

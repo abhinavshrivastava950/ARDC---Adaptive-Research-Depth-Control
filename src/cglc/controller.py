@@ -14,11 +14,11 @@ ranking; they are selected by their own conditions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 from . import budget as B
 from . import scoring as S
-from .config import CGLCConfig
+from .config import CGLCConfig, DEFAULT_CONFIG
 from .gates import GateSnapshot
 from .guards import deterministic_guards
 from .leases import Lease
@@ -120,10 +120,50 @@ def decide_rules(
 
 def lease_category_for(decision: str, near_final: bool = False,
                        early_stage: bool = False) -> str:
+    """Flag-driven category (kept for callers; the runner uses ``pick_lease_category``)."""
     if decision == "VERIFY" or near_final:
         return "SHORT"
     if decision == "REDIRECT":
         return "SHORT"
     if early_stage:
+        return "EXTENDED"
+    return "STANDARD"
+
+
+def pick_lease_category(decision: str,
+                        open_gaps: Sequence[str] | int = (),
+                        n_open_total: int | None = None,
+                        rho: float = 0.0,
+                        stalled: bool = False,
+                        cfg: CGLCConfig = DEFAULT_CONFIG,
+                        early_stage: bool = False) -> str:
+    """Lease size policy (Sec 5.6): a pure function of logged inputs and thresholds.
+
+      VERIFY, REDIRECT                      -> SHORT (verification, redirection)
+      CONTINUE, open <= short_max_gaps      -> SHORT (near-final)
+      CONTINUE, rho >= short_min_pressure   -> SHORT (high budget pressure)
+      CONTINUE, open >= extended_min_gaps, rho <= extended_max_pressure,
+                not stalled                 -> EXTENDED (early stage, many
+                                               independent items, low pressure)
+      otherwise                             -> STANDARD (default)
+
+    ``open`` is ``n_open_total`` (open evidence gaps plus unmet process duties)
+    when given, else the number of ``open_gaps`` (a list of gap ids or a count).
+    ``early_stage`` marks the first lease, issued before any work exists: nothing
+    can be "near-final" yet, so the near-final rule is skipped (a one-obligation
+    task still gets a STANDARD first lease, not a SHORT one). Thresholds live in
+    ``cfg.lease`` (V1 conventions, tunable). EXTENDED never removes the
+    maximum-silence backstop (L_max stays active).
+    """
+    if decision in ("VERIFY", "REDIRECT"):
+        return "SHORT"
+    lc = cfg.lease
+    if n_open_total is not None:
+        n = int(n_open_total)
+    else:
+        n = open_gaps if isinstance(open_gaps, int) else len(open_gaps)
+    if (n <= lc.short_max_gaps and not early_stage) or rho >= lc.short_min_pressure:
+        return "SHORT"
+    if n >= lc.extended_min_gaps and rho <= lc.extended_max_pressure and not stalled:
         return "EXTENDED"
     return "STANDARD"

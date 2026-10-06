@@ -18,11 +18,22 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Set, Tuple
 
 from ..contracts import TaskContract
+from ..leases import ACTION_CLASSES, ANSWER, READ, SEARCH, VERIFY, action_permitted
 from ..llm import LLMClient, LLMError, LLMRefusal, LLMConfigError, system_blocks
 from .base import DocumentWorker, Observation, WorkerResult
 
 MAX_CHUNK_WORDS = 120
 _WS = re.compile(r"\s+")
+
+# A model told to leave `blocker` empty sometimes writes "none" or "N/A"; that states the absence of a
+# blocker and must not trigger a blocker checkpoint (Sec 7.1, C_blocker). Whole-string match only.
+_NO_BLOCKER = {"", "none", "n/a", "na", "nil", "null", "no", "false", "no blocker", "no blockers",
+               "none declared", "not applicable", "no blocker holds"}
+
+
+def blocker_text(v: Any) -> str:
+    s = str(v if v is not None else "").strip()
+    return "" if re.sub(r"[^a-z0-9/ ]+", "", s.lower()).strip() in _NO_BLOCKER else s
 
 
 @dataclass
@@ -157,6 +168,33 @@ class LLMDocumentWorker(DocumentWorker):
                     return f"{sid}#c{i}", chunk
         return None
 
+    def _permitted_line(self) -> str:
+        """Tell the model which action classes this lease permits (Sec 7.2).
+
+        Prompt-level enforcement: whole-document mode has no tools, so this is
+        the worker's own boundary; ``WorkerAdapter`` verifies the reported
+        class independently.
+        """
+        allowed = [c for c in ACTION_CLASSES if c in self.allowed_classes]
+        if not allowed:
+            return ""
+        meaning = {SEARCH: "SEARCH (look for passages you have not used yet)",
+                   READ: "READ (read the documents, including passages you already cited)",
+                   VERIFY: "VERIFY (re-check specific claims or quotes against their cited source)",
+                   ANSWER: "ANSWER (revise the draft)"}
+        banned = [c for c in ACTION_CLASSES if c not in allowed]
+        line = "LEASE PERMITS ACTION CLASSES: " + "; ".join(meaning[c] for c in allowed) + "."
+        if banned:
+            line += " Do not spend this step on: " + ", ".join(banned) + "."
+        return line + "\n"
+
+    def _action_class(self, intent: str) -> str:
+        """Class reported for this step: VERIFY when the lease is a VERIFY lease and
+        VERIFY is permitted, else READ (the corpus is read in context)."""
+        if intent == "VERIFY" and action_permitted(self.allowed_classes, VERIFY):
+            return VERIFY
+        return READ
+
     # -- DocumentWorker ------------------------------------------------
     def _task_block(self, intent: str, target_gaps: List[str], draft: str) -> str:
         gaps = "\n".join(f"- {self._gap_text(g)}" for g in target_gaps)
@@ -173,12 +211,16 @@ class LLMDocumentWorker(DocumentWorker):
             f"ANSWER SCHEMA: {self.contract.answer_schema or 'free-form, concise'}\n"
             f"{rules}{prefs}"
             f"CONTROLLER INTENT: {intent}\n"
+            f"{self._permitted_line()}"
             f"TARGET GAPS:\n{gaps}\n{note}\nCURRENT DRAFT:\n{draft or '(none yet)'}"
         )
 
     def act(self, intent: str, target_gaps: List[str],
             allowed_classes: List[str], draft: str) -> WorkerResult:
-        return self._step(self._system, self._task_block(intent, target_gaps, draft), draft)
+        self.allowed_classes = list(allowed_classes or [])
+        res = self._step(self._system, self._task_block(intent, target_gaps, draft), draft)
+        res.detail["action_class"] = self._action_class(intent)
+        return res
 
     def _step(self, system, user: str, draft: str,
               prior_cost: Dict[str, float] | None = None,
@@ -229,7 +271,7 @@ class LLMDocumentWorker(DocumentWorker):
             observations=obs,
             draft=str(d.get("draft", "")) or draft,
             propose_final=bool(d.get("propose_final")),
-            blocker=_norm(str(d.get("blocker", ""))),
+            blocker=_norm(blocker_text(d.get("blocker", ""))),
             contradiction=bool(d.get("contradiction")),
             detail={
                 # Real work cost, charged even if no citation survived.

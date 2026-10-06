@@ -50,6 +50,20 @@ REJECTED_CONTRACTS = {
     "budget string": {**BASE, "budget_policy": "x"}, "budget negative": {**BASE, "budget_policy": {"max_tokens": -5}},
     "budget string value": {**BASE, "budget_policy": {"max_tokens": "9"}}, "budget bool": {**BASE, "budget_policy": {"max_tokens": True}},
     "revision string": {**BASE, "revision": "1"}, "revision negative": {**BASE, "revision": -1},
+    # a typo must not silently weaken a hard obligation (unknown keys inside duties / obligations)
+    "obligation typo key": {**BASE, "evidence_obligations": [{"proposition": "a", "required_recepits": 3}]},
+    "obligation weight typo": {**BASE, "evidence_obligations": [{"proposition": "a", "wieght": 5}]},
+    "duty typo key": {**BASE, "process_duties": [{"check": "use_every_document", "descripton": "x"}]},
+    "duty stray param": {**BASE, "process_duties": [{"check": "use_every_document", "n": 2}]},
+    "weight above the cap": {**BASE, "evidence_obligations": [{"proposition": "a", "weight": 1e308}]},
+    "duplicate propositions": {**BASE, "evidence_obligations": ["same text", "Same   text"]},
+    "all obligations conditional": {**BASE, "evidence_obligations": [{"proposition": "a", "conditional": True}]},
+    "contract_id bad chars": {**BASE, "contract_id": "a b<c>"}, "contract_id number": {**BASE, "contract_id": 5},
+    "clarification string": {**BASE, "clarification_triggers": "ask"},
+    "clarification null": {**BASE, "clarification_triggers": None},
+    "clarification number entry": {**BASE, "clarification_triggers": [1]},
+    "conduct string": {**BASE, "conduct_rules": "be nice"}, "conduct number entry": {**BASE, "conduct_rules": [3]},
+    "blocker also a clarification": {**BASE, "blockers": ["login wall"], "clarification_triggers": ["Login wall"]},
 }
 
 

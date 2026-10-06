@@ -34,11 +34,19 @@ ABLATIONS = [
 
 
 def summarize(records: List[Any]) -> Dict[str, Any]:
+    """Per-run summary. Eff_support and Eff_resolve stay separate (Sec 14.3)."""
     decisions = [r.decision for r in records]
+    tested = [r.lease_progress for r in records if getattr(r, "lease_progress", None)]
     return {
         "checkpoints": len(records),
         "decisions": decisions,
         "final": decisions[-1] if decisions else None,
+        "eff_support_total": round(sum(getattr(r, "eff_support", 0.0) for r in records), 6),
+        "eff_resolve_total": round(sum(getattr(r, "eff_resolve", 0.0) for r in records), 6),
+        "lease_progress_tested": len(tested),
+        "lease_progress_met": sum(1 for p in tested if p.get("met")),
+        "lease_violations": sum((getattr(r, "lease", None) or {}).get("violations", 0)
+                                for r in records),
     }
 
 

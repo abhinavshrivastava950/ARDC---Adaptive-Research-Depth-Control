@@ -46,3 +46,16 @@ def test_low_value_never_forces_finalize():
     gates = evaluate_finalization(True, True, False, True, False)
     d, _ = decide(gates, False, False, ranked)
     assert d != "ALLOW_FINALIZE"
+
+
+def test_lease_size_policy_is_a_pure_function_of_logged_thresholds():
+    from cglc.controller import lease_category_for, pick_lease_category
+    g3 = ["a", "b", "c"]
+    assert pick_lease_category("CONTINUE", g3, 3, 0.1, False, DEFAULT_CONFIG) == "EXTENDED"
+    assert pick_lease_category("CONTINUE", g3[:2], 2, 0.1, False, DEFAULT_CONFIG) == "STANDARD"
+    assert pick_lease_category("CONTINUE", g3[:1], 1, 0.1, False, DEFAULT_CONFIG) == "SHORT"
+    assert pick_lease_category("CONTINUE", g3, 3, 0.8, False, DEFAULT_CONFIG) == "SHORT"
+    assert pick_lease_category("CONTINUE", g3, 3, 0.1, True, DEFAULT_CONFIG) == "STANDARD"
+    assert pick_lease_category("VERIFY", g3, 3, 0.0, False, DEFAULT_CONFIG) == "SHORT"
+    assert pick_lease_category("REDIRECT", g3, 3, 0.0, False, DEFAULT_CONFIG) == "SHORT"
+    assert lease_category_for("CONTINUE", early_stage=True) == "EXTENDED"   # still available to callers

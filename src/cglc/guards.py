@@ -6,6 +6,10 @@ Scheduler (mandatory events):
 
 Fixed periodic inspection is only the L_max safety net, never the
 primary scheduler.
+
+"lease expiry" covers both caps of a lease (action cap and budget cap, Sec 6.1):
+the six event codes stay as the architecture defines them, and the finer
+reason ("action_cap" | "budget_cap") is recorded on the lease in the audit.
 """
 from __future__ import annotations
 

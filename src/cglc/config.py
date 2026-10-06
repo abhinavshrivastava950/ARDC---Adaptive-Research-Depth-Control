@@ -68,6 +68,12 @@ class BudgetControlConfig:
     delta_map: Dict[str, float] = field(
         default_factory=lambda: {"LOW": 0.0, "MEDIUM": 0.5, "HIGH": 1.0}
     )
+    # Q&A Q3/Q4: Eff_support / Eff_resolve keep retrieval volume or repeated
+    # searches from passing as progress. When the lease that just ran executed
+    # an action but moved neither (both 0), CONTINUE's Delta is capped at
+    # delta_map["LOW"] for the ranking only. Never touches the gate, never
+    # applies to VERIFY/REDIRECT or to finalize-request-only checkpoints.
+    use_eff_in_delta: bool = True
 
 
 @dataclass(frozen=True)
@@ -155,12 +161,27 @@ class ExecutionTempConfig:
 
 @dataclass(frozen=True)
 class LeaseConfig:
-    """Bounded work leases (Sec 5.6, Table 8, Sec 10.2)."""
+    """Bounded work leases (Sec 5.6, Table 8, Sec 6.1, Sec 10.2).
+
+    SHORT/STANDARD/EXTENDED are the action caps. ``budget_share`` is the
+    fraction of the *remaining* tokens / wall-clock a lease of that category
+    may spend (the ``budget_cap`` of Sec 6.1; the tool-call cap equals the
+    action cap). The remaining knobs are the thresholds of the lease-size
+    policy (Sec 5.6). All are V1 conventions: tunable, must be calibrated
+    (Sec 14.7), and logged in every run record.
+    """
 
     SHORT: int = 1
     STANDARD: int = 3
     EXTENDED: int = 5
     L_max: int = 5  # maximum-silence safety backstop (substantive actions)
+    budget_share: Dict[str, float] = field(
+        default_factory=lambda: {"SHORT": 0.20, "STANDARD": 0.35, "EXTENDED": 0.50}
+    )
+    short_max_gaps: int = 1  # CONTINUE with <= this many open items is near-final: SHORT
+    short_min_pressure: float = 0.75  # CONTINUE at rho >= this is high pressure: SHORT
+    extended_min_gaps: int = 3  # EXTENDED needs >= this many independent open items
+    extended_max_pressure: float = 0.25  # ... and rho <= this (low budget pressure)
 
 
 @dataclass(frozen=True)

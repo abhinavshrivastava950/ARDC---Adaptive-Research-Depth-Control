@@ -31,7 +31,7 @@ def contract():
 
 def test_each_query_gets_a_share_of_the_retrieved_passages():
     fake = QueryFake(["revenue split user platform percent", "advertisers fund campaigns checkout"])
-    w = RAGDocumentWorker({"d.txt": DOC}, contract(), fake, top_k=4)
+    w = RAGDocumentWorker({"d.txt": DOC}, contract(), fake, top_k=4, retriever="bm25")
     res = w.act("CONTINUE", ["ev-0", "ev-1"], [], "")
     texts = " ".join(o.text for o in res.observations)
     assert "88 percent" in texts and "Razorpay" in texts           # both parts retrieved
@@ -42,7 +42,7 @@ def test_each_query_gets_a_share_of_the_retrieved_passages():
 
 def test_at_most_three_queries_are_used_and_blank_ones_ignored():
     fake = QueryFake(["a split", "  ", "b funding", "c extra", "d too many", "e too many"])
-    w = RAGDocumentWorker({"d.txt": DOC}, contract(), fake, top_k=6)
+    w = RAGDocumentWorker({"d.txt": DOC}, contract(), fake, top_k=6, retriever="bm25")
     res = w.act("CONTINUE", ["ev-0"], [], "")
     assert res.detail["queries"] == ["a split", "b funding", "c extra"]
 
@@ -54,7 +54,7 @@ def test_a_failed_query_call_falls_back_to_the_gap_text_and_still_retrieves():
             if set(schema["properties"]) == {"queries"}:
                 raise LLMError("rate limited")
             return super().complete_json(system, user, schema, max_tokens, temperature)
-    w = RAGDocumentWorker({"d.txt": DOC}, contract(), Broken([]), top_k=4)
+    w = RAGDocumentWorker({"d.txt": DOC}, contract(), Broken([]), top_k=4, retriever="bm25")
     res = w.act("CONTINUE", ["ev-0"], [], "")
     assert res.observations and res.detail["queries"]
 

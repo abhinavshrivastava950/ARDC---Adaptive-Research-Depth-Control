@@ -111,3 +111,36 @@ def test_ablation_ladder_runs():
     ])
     assert [r["variant"] for r in rows] == ["cglc_full", "cglc_no_stall_trigger"]
     assert all(r["checkpoints"] >= 1 for r in rows)
+
+
+def test_records_carry_eff_lease_and_contract_hash_for_terminal_and_nonterminal_decisions():
+    c, w, led, tr = _case()
+    res = Runner(max_checkpoints=4).run(c, w, led, tr, process_check=lambda: (True, []))
+    assert all(r.contract_hash == c.content_hash() for r in res.records)
+    assert all(r.lease and r.lease["lease_id"] == r.lease_id for r in res.records)
+    assert all(r.lease_progress and "met" in r.lease_progress for r in res.records)
+    assert all(isinstance(r.eff_support, float) and isinstance(r.eff_resolve, float) for r in res.records)
+    for r in res.records:
+        assert (r.next_lease is None) == (r.decision in ("ALLOW_FINALIZE", "ASK_USER", "REPORT_BLOCKED"))
+        if r.next_lease:
+            assert r.next_lease["lease_id"] == r.selected_lease_id
+
+
+def test_first_lease_follows_the_size_policy_and_fixed_lease_overrides_it():
+    docs = {"a": "alpha evidence one", "b": "beta evidence two", "c": "gamma evidence three"}
+    c = TaskContract.create("g", ["inspect"], ["alpha evidence", "beta evidence", "gamma evidence"])
+
+    def first_lease(**kw):
+        tr = Trace()
+        led = EvidenceLedger([o.obligation_id for o in c.evidence_obligations])
+        w = WorkerAdapter(FixedCorpusWorker(docs), tr)
+        res = Runner(max_checkpoints=1, **kw).run(c, w, led, tr, process_check=lambda: (True, []))
+        return res.records[0].lease
+
+    # three open obligations at low pressure: the first lease is EXTENDED (was always STANDARD)
+    lease = first_lease()
+    assert lease["category"] == "EXTENDED" and lease["action_cap"] == 5
+    assert lease["allowed_action_classes"] == ["SEARCH", "READ", "ANSWER"]
+    # the ablation arms keep their fixed size
+    lease = first_lease(policy="rules", fixed_lease=3)
+    assert lease["category"] == "FIXED" and lease["action_cap"] == 3 and lease["budget_cap"] == {}

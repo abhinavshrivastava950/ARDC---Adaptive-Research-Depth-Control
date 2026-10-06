@@ -46,9 +46,57 @@ def test_budget_policy_is_translated_and_provenance_says_the_source_is_only_clai
     assert c.provenance.startswith("user-supplied")
 
 
+def test_provenance_records_claims_briefly_and_never_checks_the_revision_id():
+    long = "x" * 500
+    c = TaskContract.from_dict(tweak(provenance={"dataset": long, "task_id": "t\n1"},
+                                     revision_id="sha256:" + "a" * 64))
+    assert "dataset=" + "x" * 57 + "..." in c.provenance and "task_id=t 1" in c.provenance
+    assert "revision_id sha256:" + "a" * 20 + "..., not verified" in c.provenance
+    assert "not a sha256 digest" not in c.provenance
+    odd = TaskContract.from_dict(tweak(revision_id="v7"))
+    assert "revision_id v7, not a sha256 digest, not verified" in odd.provenance
+    with pytest.raises(ValueError, match="revision_id must be a string"):
+        TaskContract.from_dict(tweak(revision_id=7))
+    assert "revision_id" not in TaskContract.from_dict(tweak(revision_id=...)).provenance
+
+
 def test_the_native_format_without_a_schema_field_still_works():
     c = TaskContract.from_dict({"goal": "g", "evidence_obligations": ["a"]})
     assert c.provenance == "user-supplied (JSON contract)" and c.conduct_rules == []
+
+
+def test_blockers_are_split_by_wording_into_blockers_and_clarification_triggers():
+    asks = ["Ask if a missing budget would materially change the recommendation.",
+            "Ask the user if a size is unclear."]
+    stops = ["Ask or stop if the site requires login.", "Stop if the page is unavailable.", "The file is missing."]
+    c = TaskContract.from_dict(tweak(blockers=asks[:1] + stops[:1] + asks[1:] + stops[1:]))
+    assert c.clarification_triggers == asks and c.blockers == stops
+    assert c.to_dict()["clarification_triggers"] == asks and c.to_dict()["blockers"] == stops
+
+
+def test_the_meta_obligation_each_hard_requirement_names_the_obligations_it_covers():
+    c = TaskContract.from_dict(tweak(evidence_obligations=["target page title/name",
+                                                           "visible evidence for each hard requirement"]))
+    meta = c.evidence_obligations[1].proposition
+    assert meta.startswith("Quoted evidence for: visible evidence for each hard requirement")
+    assert "obligations ev-2, ev-3" in meta                      # the two provable constraints of the fixture
+    # no provable constraint -> nothing to name, the text stays as given
+    c = TaskContract.from_dict(tweak(evidence_obligations=["visible evidence for each hard requirement"],
+                                     hard_task_constraints=["must not buy"]))
+    assert c.evidence_obligations[0].proposition == "Quoted evidence for: visible evidence for each hard requirement"
+
+
+def test_budget_policy_keys_the_docs_call_recorded_are_really_recorded():
+    bp = TaskContract.from_dict(FIX).budget_policy
+    assert bp["max_controller_calls"] == 100000 and bp["requires_runtime_configuration"] is False
+    assert bp["checkpoint_triggers"] == ["worker requests finalization", "lease expires"]
+    assert bp["policy_version"] == "demo-policy" and bp["configuration_note"] == "synthetic fixture"
+
+
+def test_an_imported_contract_round_trips_through_to_dict():
+    c = TaskContract.from_dict(FIX)
+    again = TaskContract.from_dict(c.to_dict())
+    assert again.content_hash() == c.content_hash() and again.contract_id == "demo-0001"
 
 
 # --- strictness --------------------------------------------------------------------------------------
@@ -82,6 +130,10 @@ def tweak(**changes):
     (tweak(budget_policy={"structural_stall_parameters": {"jaccard_threshold": 0.6}}), "exactly"),
     (tweak(budget_policy={"lease_action_caps": {"SHORT": 3, "STANDARD": 2, "EXTENDED": 4}}), "SHORT <= STANDARD"),
     (tweak(budget_policy={"lease_action_caps": {"SHORT": 1, "STANDARD": 2, "EXTENDED": 99}}), "1 to 9"),
+    (tweak(budget_policy={"checkpoint_triggers": "lease expires"}), "checkpoint_triggers"),
+    (tweak(budget_policy={"checkpoint_triggers": [5]}), "checkpoint_triggers[0]"),
+    (tweak(budget_policy={"requires_runtime_configuration": "no"}), "requires_runtime_configuration"),
+    (tweak(evidence_obligations=["same thing", "Same  thing"], hard_task_constraints=[]), "same proposition"),
 ])
 def test_the_importer_rejects_bad_input_with_a_reason(bad, fragment):
     with pytest.raises(ValueError, match=fragment.replace("[", r"\[").replace("]", r"\]")):
@@ -191,11 +243,10 @@ def test_not_applicable_is_ignored_for_obligations_that_are_not_conditional():
     assert r["decision"] != "ALLOW_FINALIZE"              # non-conditional obligations stay unproven
 
 
-# --- the real file, when it is on this machine -----------------------------------------------------------
-REAL = Path(r"C:\Users\abhin\Downloads\webrider_first_10_cglc_contracts.json")
+# --- the real WebRider file (a copy lives in tests/fixtures; see test_contract_webrider10.py) --------------
+REAL = Path(__file__).parent / "fixtures" / "webrider_first_10_cglc_contracts.json"
 
 
-@pytest.mark.skipif(not REAL.exists(), reason="the user's WebRider contracts file is not present")
 def test_all_ten_real_webrider_contracts_import():
     contracts = json.loads(REAL.read_text(encoding="utf-8"))
     assert len(contracts) == 10

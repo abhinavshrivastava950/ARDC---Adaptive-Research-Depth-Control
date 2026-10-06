@@ -45,6 +45,11 @@ def main() -> int:
         print(f"HTTP {status}: {r.get('error')}")
         return 1
     print("DECISION:", r["decision"], f"({r['mode']} mode, {r['spend']['elapsed_seconds']}s)")
+    if r["decision"] != "ALLOW_FINALIZE":
+        for why in r["reasons"]:
+            print("  not approved because:", why)
+        if r["blocked_condition"]:
+            print("  blocked condition:", r["blocked_condition"])
     print("CONTRACT SOURCE:", r["contract"]["provenance"])
     for e in r["evidence"]:
         print(f"  [{e['status']:14}] {e['proposition'][:100]}  ({len(e['receipts'])} quotes)")

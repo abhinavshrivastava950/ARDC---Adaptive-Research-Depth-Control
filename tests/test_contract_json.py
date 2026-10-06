@@ -145,3 +145,162 @@ def test_flask_endpoint_accepts_a_json_contract():
         "provider": "offline", "documents": TWO_DOCS,
         "contract": {"goal": "remote days per week", "evidence_obligations": ["remote days per week"]}})
     assert r.status_code == 200 and r.json["contract"]["provenance"] == "user-supplied (JSON contract)"
+
+
+# --- strictness inside duties and obligations, round trip, weights, examples --------------------------------
+FULL = {**BASE,
+        "process_duties": [{"check": "cite_document", "document": "policy.txt", "duty_id": "cite"},
+                           {"check": "min_distinct_sources", "n": 2},
+                           {"check": "use_every_document"}],
+        "evidence_obligations": ["a", {"proposition": "b", "required_receipts": 2, "weight": 2.5},
+                                 {"proposition": "c", "conditional": True}],
+        "soft_prefs": {"style": "concise"}, "blockers": ["the policy file is missing"],
+        "clarification_triggers": ["Ask if the country is unclear"],
+        "conduct_rules": ["Cite documents by name"], "answer_schema": {"format": "one line"},
+        "budget_policy": {"max_tool_calls": 5}, "revision": 3, "contract_id": "policy-q1"}
+
+
+def test_to_dict_round_trips_through_from_dict_for_every_duty_kind():
+    c = TaskContract.from_dict(FULL)
+    d = c.to_dict()
+    assert d["process_duties"][0]["params"] == {"document": "policy.txt"}
+    assert d["process_duties"][1]["params"] == {"n": 2}
+    again = TaskContract.from_dict(d)
+    assert again.content_hash() == c.content_hash() and again.to_dict() == {**d, "provenance": again.provenance}
+    assert again.contract_id == "policy-q1" and again.revision == 3
+
+
+def test_every_meaningful_field_is_in_to_dict_and_changes_the_hash():
+    import dataclasses
+    base = TaskContract.from_dict(FULL)
+    h = base.content_hash()
+    assert h == TaskContract.from_dict(FULL).content_hash()           # stable across loads
+    assert h == TaskContract.from_dict({**FULL, "contract_id": "other"}).content_hash()   # the id is not content
+    changes = {"goal": "other goal", "blockers": ["something else"], "clarification_triggers": [],
+               "conduct_rules": [], "soft_prefs": {}, "answer_schema": {}, "budget_policy": {"max_tool_calls": 6},
+               "revision": 4, "process_duties": FULL["process_duties"][:2],
+               "evidence_obligations": ["a", {"proposition": "b", "required_receipts": 2, "weight": 3},
+                                        {"proposition": "c", "conditional": True}]}
+    for k, v in changes.items():
+        assert TaskContract.from_dict({**FULL, k: v}).content_hash() != h, k
+    assert {f.name for f in dataclasses.fields(TaskContract)} <= set(base.to_dict())
+
+
+@pytest.mark.parametrize("bad, fragment", [
+    ({**BASE, "evidence_obligations": [{"proposition": "a", "wieght": 5}]}, "unknown field"),
+    ({**BASE, "evidence_obligations": [{"proposition": "a", "required_recepits": 3}]}, "required_recepits"),
+    ({**BASE, "process_duties": [{"check": "use_every_document", "descripton": "typo"}]}, "unknown field"),
+    ({**BASE, "process_duties": [{"check": "use_every_document", "n": 2}]}, "does not take"),
+    ({**BASE, "process_duties": [{"check": "cite_document", "document": "a", "params": {"document": "b"}}]}, "twice"),
+    ({**BASE, "process_duties": [{"check": "min_distinct_sources", "params": {"m": 2}}]}, "does not take"),
+    ({**BASE, "process_duties": [{"check": "cite_document", "params": "x"}]}, "params must be"),
+    ({**BASE, "process_duties": [{"check": "use_every_document", "duty_id": ""}]}, "duty_id"),
+    ({**BASE, "process_duties": [{"check": "use_every_document", "description": ""}]}, "description"),
+    ({**BASE, "evidence_obligations": [{"proposition": "a", "obligation_id": None}]}, "obligation_id"),
+    ({**BASE, "evidence_obligations": [{"proposition": "a", "weight": 1001}]}, "weight"),
+    ({**BASE, "evidence_obligations": ["Same thing.", " same   THING. "]}, "same proposition"),
+    ({**BASE, "evidence_obligations": [{"proposition": "a", "conditional": True}]}, "nothing would ever have to be proven"),
+    ({**BASE, "contract_id": "bad id!"}, "contract_id"),
+    ({**BASE, "contract_id": 5}, "contract_id"),
+    ({**BASE, "clarification_triggers": "ask me"}, "clarification_triggers must be a list"),
+    ({**BASE, "clarification_triggers": [""]}, "clarification_triggers[0]"),
+    ({**BASE, "blockers": ["x y"], "clarification_triggers": ["X  Y"]}, "both a blocker and a clarification trigger"),
+    ({**BASE, "conduct_rules": ["r"] * 23}, "too many"),
+])
+def test_strict_parsing_catches_typos_and_contradictions(bad, fragment):
+    with pytest.raises(ValueError, match=fragment.replace("[", r"\[").replace("]", r"\]")):
+        TaskContract.from_dict(bad)
+
+
+def test_conditional_obligations_are_fine_when_something_hard_remains():
+    c = TaskContract.from_dict({**BASE, "evidence_obligations": ["a", {"proposition": "b", "conditional": True}]})
+    assert c.validate() == []
+    d = TaskContract.from_dict({"goal": "g", "process_duties": [{"check": "use_every_document"}],
+                                "evidence_obligations": [{"proposition": "b", "conditional": True}]})
+    assert d.validate() == []        # a code-checked duty still has to be met
+
+
+def test_a_supplied_contract_id_is_kept_and_otherwise_a_fresh_one_is_made():
+    assert TaskContract.from_dict({**BASE, "contract_id": "mine-1"}).contract_id == "mine-1"
+    a, b = TaskContract.from_dict(BASE), TaskContract.from_dict(BASE)
+    assert a.contract_id != b.contract_id and a.content_hash() == b.content_hash()
+
+
+def test_weights_are_validated_and_exposed_as_w_i():
+    c = TaskContract.from_dict(FULL)
+    assert c.obligation_weights() == {"ev-0": 1.0, "ev-1": 2.5, "ev-2": 1.0}
+    for w in (0, -1, float("nan"), float("inf"), True, "2", 1000.5):
+        with pytest.raises(ValueError, match="weight"):
+            TaskContract.from_dict({**BASE, "evidence_obligations": [{"proposition": "a", "weight": w}]})
+    top = TaskContract.from_dict({**BASE, "evidence_obligations": [{"proposition": "a", "weight": 1000}]})
+    assert top.obligation_weights() == {"ev-0": 1000.0}
+
+
+# --- Sec 7.4: validate() on contracts built in code (the runner calls it before the first lease) ---------------
+def make(**over):
+    c = TaskContract.create("g", None, ["a", "b"])
+    for k, v in over.items():
+        setattr(c, k, v)
+    return c
+
+
+def test_validate_accepts_a_consistent_contract_and_keeps_the_old_messages():
+    assert make().validate() == []
+    bad = TaskContract.create("", [], [])
+    assert "empty goal" in bad.validate() and any("no hard obligations" in p for p in bad.validate())
+    dup = make()
+    dup.evidence_obligations[1].obligation_id = "ev-0"
+    assert any(p.startswith("duplicate obligation/duty ids") for p in dup.validate())
+
+
+def test_validate_flags_genuinely_inconsistent_contracts():
+    from cglc.contracts import ProcessDuty
+    cases = {
+        "unknown check": make(process_duties=[ProcessDuty("d", "x", check="vibes")]),
+        "cite nothing": make(process_duties=[ProcessDuty("d", "x", check="cite_document", params={"document": " "})]),
+        "n zero": make(process_duties=[ProcessDuty("d", "x", check="min_distinct_sources", params={"n": 0})]),
+        "n missing": make(process_duties=[ProcessDuty("d", "x", check="min_distinct_sources")]),
+        "blank proposition": make(),
+        "bad weight": make(),
+        "bad receipts": make(),
+        "all conditional": make(),
+        "blank rule": make(conduct_rules=[" "]),
+        "overlap": make(blockers=["x"], clarification_triggers=["X"]),
+        "bad budget": make(budget_policy={"max_tokens": -1}),
+        "bad stall": make(budget_policy={"structural_stall_parameters": {"jaccard_threshold": 2}}),
+        "revision": make(revision=0),
+    }
+    cases["blank proposition"].evidence_obligations[0].proposition = " "
+    cases["bad weight"].evidence_obligations[0].weight = float("nan")
+    cases["bad receipts"].evidence_obligations[0].required_receipts = 9
+    for o in cases["all conditional"].evidence_obligations:
+        o.conditional = True
+    for label, c in cases.items():
+        assert c.validate(), label
+    # duties that the caller verifies with its own function (check == "") stay valid
+    assert make(process_duties=[ProcessDuty("d", "read everything")]).validate() == []
+
+
+def test_the_runner_refuses_an_inconsistent_contract_instead_of_running_it():
+    from cglc import Runner
+    from cglc.ledger import EvidenceLedger
+    from cglc.trace import Trace
+    c = TaskContract.create("g", None, ["same", "same"])
+    res = Runner().run(c, None, EvidenceLedger([o.obligation_id for o in c.evidence_obligations]), Trace())
+    assert res.decision == "ASK_USER" and "same proposition" in res.records[0].note
+
+
+def test_every_example_contract_file_loads():
+    root = Path(__file__).resolve().parents[1] / "examples"
+    files = sorted(root.glob("*.json"))
+    assert files
+    for f in files:
+        TaskContract.from_dict(json.loads(f.read_text(encoding="utf-8")))
+
+
+def test_the_comparison_example_uses_a_checkable_duty_and_keeps_the_rest_as_conduct_rules():
+    path = Path(__file__).resolve().parents[1] / "examples" / "comparison_task.json"
+    c = TaskContract.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    assert [(d.duty_id, d.check) for d in c.process_duties] == [("inspect-all", "use_every_document")]
+    assert len(c.conduct_rules) == 1 and "Review their diagrams" in c.conduct_rules[0]
+    assert c.blockers and c.answer_schema["fields"][0] == "decision"

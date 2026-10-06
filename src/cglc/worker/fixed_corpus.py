@@ -12,6 +12,7 @@ import re
 from collections import Counter
 from typing import List, Dict
 
+from ..leases import SEARCH
 from .base import DocumentWorker, WorkerResult, Observation
 
 _WS = re.compile(r"[a-z0-9]+")
@@ -46,10 +47,12 @@ class FixedCorpusWorker(DocumentWorker):
 
     def act(self, intent: str, target_gaps, allowed_classes, draft: str) -> WorkerResult:
         self.calls += 1
+        self.allowed_classes = list(allowed_classes or [])
         query = " ".join(target_gaps) if target_gaps else (draft or intent)
         ranked = sorted(self.docs, key=lambda sid: -self._score(query or intent, sid))
+        top = ranked[: self.top_k]
         obs: List[Observation] = []
-        for sid in ranked[: self.top_k]:
+        for sid in top:
             text = self.docs[sid]
             span = text[:1200]
             obs.append(
@@ -58,11 +61,15 @@ class FixedCorpusWorker(DocumentWorker):
                     span_id=f"{sid}#0",
                     text=span,
                     chunk_id=f"{sid}#0",
-                    cost={"tool_calls": 1.0, "tokens": float(len(span) // 4),
-                          "wall_clock": 0.2},
+                    # One action is one retrieval call (the lease's tool-call
+                    # cap counts calls, not passages), split across the hits.
+                    cost={"tool_calls": 1.0 / max(1, len(top)),
+                          "tokens": float(len(span) // 4), "wall_clock": 0.2},
                 )
             )
         new_draft = (draft + "\n" if draft else "") + " ".join(
             o.text[:400] for o in obs
         )[:4000]
-        return WorkerResult(observations=obs, draft=new_draft)
+        # Keyword retrieval is the only thing this worker can do: class SEARCH.
+        return WorkerResult(observations=obs, draft=new_draft,
+                            detail={"action_class": SEARCH})

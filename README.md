@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="python 3.10+">
-  <img src="https://img.shields.io/badge/tests-18_passing-brightgreen" alt="18 tests passing">
+  <img src="https://img.shields.io/badge/tests-482_passing-brightgreen" alt="482 tests passing">
   <img src="https://img.shields.io/badge/architecture-frozen-orange" alt="architecture frozen">
   <img src="https://img.shields.io/badge/thresholds-tunable-yellow" alt="thresholds tunable">
   <img src="https://img.shields.io/badge/demo-live-orange" alt="live demo, no backend">
@@ -209,6 +209,28 @@ step-by-step timeline and the spend. Pick **Groq** (load your key's model list o
 large ones switch to retrieval (BM25 top passages) automatically. Groq works in `json_object` mode on
 every model; the reply is schema-validated with one repair retry, and anything invalid fails closed.
 
+### Retrieval: keyword, hybrid, embeddings
+
+Retrieval lives in the worker; the controller only sees chunk ids, so changing the search method never changes the
+controller. `src/cglc/retrieval.py` has `BM25Index` (keywords) and `HybridIndex` (BM25 + dense vectors fused by
+Reciprocal Rank Fusion). `retriever` is `auto` (hybrid only when a *real* embedding model is available), `bm25` or
+`hybrid` (forced). Real embeddings are optional: `pip install ".[embed]"` (fastembed, `BAAI/bge-small-en-v1.5`);
+`CGLC_EMBEDDER` (`hashed`, `fastembed`, `sentence-transformers`) and `CGLC_EMBED_MODEL` override the choice. Without a model
+the fallback is a zero-dependency word-shape hash: it tolerates typos and word forms but does **not** understand synonyms,
+and every run record says which search actually ran (`retrieval`). On a small hand-written test set (not blind) the right
+passage was in the top 3 for 13/14 queries with hybrid versus 10/14 with BM25; treat that as a sanity check, not a benchmark.
+
+### Leases and progress
+
+A lease is `(intent, target gaps, allowed action classes, action cap, budget cap, progress test)`. Allowed classes
+(`SEARCH`, `READ`, `VERIFY`, `ANSWER`) are enforced by the worker at its tool boundary and independently verified and
+recorded by the adapter (`lease_violation`). The budget cap is a share of the remaining tokens / wall-clock
+(`LeaseConfig.budget_share`). Size follows Sec 5.6: REDIRECT and VERIFY are SHORT, a near-final or high-pressure
+CONTINUE is SHORT, an early-stage CONTINUE with at least three open items at low pressure is EXTENDED, otherwise STANDARD.
+At each checkpoint the audit record reports `eff_support` and `eff_resolve` separately (Sec 14.3), the lease that ran, whether
+its structured progress test was met, and the lease the decision issued. A lease that acted but moved neither Eff is
+capped at LOW progress for the ranking only (`use_eff_in_delta`); it can never open or close the gate.
+
 ### The contract as JSON
 
 The contract is the tuple `K = (g, H_proc, H_evid, S_soft, B_mat, A_schema, B_policy)`. Per the design, in
@@ -238,11 +260,14 @@ What each field does in this version (the result also prints this list for the c
 | `process_duties` (H_proc) | hard duties **checked by code**: `use_every_document`, `cite_document` (+`document`), `min_distinct_sources` (+`n`). Free text is rejected because nothing could verify it |
 | `evidence_obligations` (H_evid) | what must be proven; `required_receipts` = distinct supporting quotes needed |
 | `soft_prefs` (S_soft) | shown to the worker as preferences, **not enforced** |
-| `blockers` (B_mat) | conditions the judge watches for (a model judgement, not a code check) |
+| `blockers` (B_mat) | access-style conditions; the judge reports one only if a supplied document shows it, and a reported blocker closes the gate (a model judgement, not a code check) |
+| `clarification_triggers` | questions only the user can answer (`needs_user` -> `ASK_USER`, only while requirements are unproven); they never close the gate |
+| `conduct_rules` | rules the answer must follow that no code can verify; shown to the worker and judge, reported as *not machine-checked* |
 | `answer_schema` (A_schema) | required answer form, shown to worker and judge |
 | `budget_policy` (B_policy) | `max_tool_calls` / `max_tokens` / `max_seconds` set the run limits (capped by the server); other keys are recorded only |
 
-Unknown fields, wrong types and impossible duties are rejected with a message. The server sets the
+Unknown fields (also inside duties and obligations), wrong types, duplicate propositions, all-conditional obligations
+with no duty, and impossible duties are rejected with a message. A supplied `contract_id` is kept. The server sets the
 provenance (`user-supplied (JSON contract)`); it is never taken from the input. The simple form compiles
 to the same structure.
 
@@ -259,7 +284,7 @@ document-grounded, so the mapping is explicit and nothing is pretended:
 | `hard_task_constraints` | "must show / be / address / use / distinguish ..." become evidence obligations (each needs a quote); the rest ("must not ...", "must avoid ...", "must remain ...") become **conduct rules** |
 | `process_duties` (text) | **conduct rules**: shown to the worker and the judge, reported as *not machine-checked* (no code can verify "browse only" in a document run) |
 | `soft_preferences` | `soft_prefs` (shown to the worker, not enforced) |
-| `blockers` | `blockers` (watched by the judge) |
+| `blockers` | an "Ask if ..." string without stop/halt wording becomes a `clarification_trigger`; every other string stays a `blockers` entry |
 | `answer_schema` (text) | `answer_schema` |
 | `budget_policy` | `runtime_budget_caps` become run limits (the server caps them); `structural_stall_parameters` and `lease_action_caps` are applied to the controller; other keys are recorded only |
 | `provenance`, `revision_id` | recorded in the provenance string as a *claim* by the input (the hash is not verified) |

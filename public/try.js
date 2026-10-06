@@ -242,7 +242,8 @@ async function run() {
   if (PROV[p].needsKey && !$("#t-key").value.trim()) return showStatus("Paste your API key, or switch to Offline mode.", true);
   const body = {
     provider: p, api_key: $("#t-key").value.trim(), model: $("#t-model").value.trim(),
-    documents: state.docs, depth: $("#t-depth").value, mode: $("#t-mode").value
+    documents: state.docs, depth: $("#t-depth").value, mode: $("#t-mode").value,
+    retriever: $("#t-retriever").value
   };
   if (jsonMode) body.contract = contract;
   else Object.assign(body, { goal, obligations: $("#t-obl").value.split("\n").map(s => s.trim()).filter(Boolean),
@@ -377,7 +378,8 @@ function render(r) {
   const tl = el("div", { class: "r-tl" });
   let si = 0;
   const stepEl = s => el("div", { class: "r-step" },
-    el("b", { text: `Worker step ${s.n}` }), ` (${s.intent || "CONTINUE"}) searched `, el("code", { text: s.query || "…" }),
+    el("b", { text: `Worker step ${s.n}` }), ` (${s.intent || "CONTINUE"}${s.action_class ? " · " + s.action_class : ""}) searched `, el("code", { text: s.query || "…" }),
+    s.status === "lease_violation" ? " · ⚠ outside the lease's allowed actions" : "",
     ` → saw ${s.chunks.length} passage${s.chunks.length === 1 ? "" : "s"}, ${s.new_chunks} new · ${s.tokens.toLocaleString()} tokens`,
     s.dropped ? ` · ${s.dropped} quote${s.dropped === 1 ? "" : "s"} discarded (not found in your documents)` : "",
     s.blocker ? ` · blocker: ${s.blocker}` : "", s.contradiction ? " · reported a contradiction" : "");
@@ -392,6 +394,26 @@ function render(r) {
     const chips = el("div", { class: "chips" });
     GATES.forEach(([k, name]) => { const ok = gateOk(c.gates, k); chips.append(el("span", { class: `chip ${ok ? "ok" : "bad"}`, text: `${ok ? "✓" : "✗"} ${name}` })); });
     ck.append(chips);
+    // The lease that just ran (Sec 6.1) and what it achieved (Sec 14.3: two separate numbers).
+    const L = c.lease;
+    if (L) {
+      const cap = L.budget_cap || {}, sp = L.spent || {};
+      const prog = c.lease_progress;
+      const lines = [
+        `Lease that ran: ${L.category} ${L.intent}, ${L.actions_used} of ${L.action_cap} actions` +
+          (L.expiry_reason ? `, ended by ${L.expiry_reason.replace("_", " ")}` : "") +
+          (cap.tokens ? `; tokens ${Math.round(sp.tokens || 0).toLocaleString()} of ${Math.round(cap.tokens).toLocaleString()} allowed` : "") + ".",
+        `Allowed action types: ${(L.allowed_action_classes || []).join(", ") || "any"}` +
+          (L.violations ? `; ⚠ ${L.violations} action(s) broke this` : "") + ".",
+        `Progress since the last checkpoint: Eff_support +${c.eff_support}, Eff_resolve +${c.eff_resolve}` +
+          (prog ? `; this lease's own test (${(prog.targets || []).length} target${(prog.targets || []).length === 1 ? "" : "s"}): ` +
+            (prog.met ? "met" : "NOT met") : "") + "."];
+      lines.forEach(t => ck.append(el("p", { class: "judge", text: t })));
+    }
+    if (c.next_lease) {
+      const N = c.next_lease;
+      ck.append(el("p", { class: "judge", text: `Next lease: ${N.category} ${N.intent}, up to ${N.action_cap} action${N.action_cap === 1 ? "" : "s"}; allowed ${(N.allowed_action_classes || []).join(", ")}.` }));
+    }
     const reasons = (c.gates.reasons || []).filter(Boolean);
     if (reasons.length) ck.append(el("p", { class: "judge", text: "Why the gate said no: " + reasons.join("; ") }));
     const OVH = /\s*\[overhead guard[^\]]*\]/;
@@ -418,6 +440,9 @@ function render(r) {
   root.append(spend);
   root.append(el("div", { class: "r-meta" },
     el("span", { class: "chip", text: `mode: ${r.mode === "rag" ? "retrieval (RAG)" : r.mode === "full" ? "full document in prompt" : "offline"}` }),
+    r.retrieval && r.mode === "rag" ? el("span", { class: "chip", title: r.retrieval.note || "",
+      text: `search: ${r.retrieval.used === "hybrid" ? "hybrid (keyword + " + (r.retrieval.semantic ? "embeddings: " + (r.retrieval.dense_model || r.retrieval.dense_backend) : "word-shape hash, not semantic") + ")" : "keyword (BM25)"}` }) : null,
+    r.contract && r.contract.content_hash ? el("span", { class: "chip", title: r.contract.content_hash, text: `contract ${r.contract.content_hash.slice(7, 15)}` }) : null,
     r.model ? el("span", { class: "chip", text: `${r.provider}: ${r.model}` }) : null,
     el("span", { class: "chip", text: `controller overhead: ${sp.controller_tokens.toLocaleString()} tokens` }),
     el("span", { class: "chip", text: `${r.docs.count} docs · ${r.docs.chars.toLocaleString()} chars` }),

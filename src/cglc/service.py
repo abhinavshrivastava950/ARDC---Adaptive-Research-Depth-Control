@@ -34,6 +34,7 @@ from .worker.llm_worker import LLMDocumentWorker
 from .worker.rag_worker import RAGDocumentWorker
 
 PROVIDERS = ("groq", "anthropic", "offline")
+RETRIEVERS = ("auto", "bm25", "hybrid")  # search method in retrieval (RAG) mode
 CLAUDE_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"]
 DEFAULT_MODELS = {"groq": DEFAULT_GROQ_MODEL, "anthropic": "claude-opus-5-5", "offline": ""}
 
@@ -162,8 +163,11 @@ def _clean_request(req: Dict[str, Any]) -> Dict[str, Any]:
     mode = _opt_str(req, "mode") or "auto"
     if mode not in ("auto", "full", "rag"):
         raise InputError("Unknown retrieval mode.")
+    retriever = _opt_str(req, "retriever") or "auto"
+    if retriever not in RETRIEVERS:
+        raise InputError(f"Unknown retriever (use one of {', '.join(RETRIEVERS)}).")
     return dict(provider=provider, goal=goal, model=model, obligations=obl, contract=contract,
-                depth=depth, mode=mode, docs=_clean_docs(req.get("documents")),
+                depth=depth, mode=mode, retriever=retriever, docs=_clean_docs(req.get("documents")),
                 require_all_docs=require_all,
                 api_key=clean_api_key(_opt_str(req, "api_key")))
 
@@ -251,8 +255,11 @@ def contract_notes(contract: TaskContract) -> List[str]:
     if contract.soft_prefs:
         notes.append("soft_prefs are shown to the worker as preferences; they are not enforced.")
     if contract.blockers:
-        notes.append("blockers are given to the judge as conditions to watch for; this is a model "
-                     "judgement, not a code check.")
+        notes.append("blockers are access conditions: the judge reports one only if a supplied document "
+                     "shows it, and a reported blocker closes the gate (a model judgement, not a code check).")
+    if getattr(contract, "clarification_triggers", None):
+        notes.append("clarification triggers are questions only the user can answer (needs_user -> ASK_USER, "
+                     "only while requirements are still unproven); they never close the gate.")
     if contract.conduct_rules:
         notes.append("conduct rules are shown to the worker and the judge; NOT machine-checked "
                      "(no code can verify them in a document run): " + "; ".join(contract.conduct_rules))
@@ -270,7 +277,8 @@ def contract_notes(contract: TaskContract) -> List[str]:
         notes.append("budget_policy max_tool_calls / max_tokens / max_seconds set this run's limits "
                      "(capped by the server); other keys are recorded only.")
     if any(o.weight != 1.0 for o in contract.evidence_obligations):
-        notes.append("obligation weights are recorded but do not change the decision yet.")
+        notes.append("obligation weights w_i scale the Eff_support / Eff_resolve progress figures in the "
+                     "audit; they never lower what the finalization gate requires.")
     return notes
 
 
@@ -363,11 +371,15 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
     trace = Trace()
     ledger = EvidenceLedger([o.obligation_id for o in contract.evidence_obligations])
 
+    retrieval: Dict[str, Any] = {"requested": c["retriever"], "used": "none",
+                                 "note": "whole documents are in the prompt; there is no retrieval step"}
     if provider == "offline":
         mode = "offline"
         inner: DocumentWorker = ExtractiveWorker(docs, query=c["goal"])
         judge: Any = rule_judge
         harvest = True
+        retrieval = {"requested": c["retriever"], "used": "keyword",
+                     "note": "offline demo: plain keyword overlap, no embeddings"}
         warnings.append("Offline demo: keyword retrieval only, no AI. It shows how the "
                         "controller behaves; it does not understand the documents.")
     else:
@@ -381,9 +393,13 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
         mode = "rag" if use_rag else "full"
         t_gen, t_sel = WORKER_TEMPERATURE, cfg.temp.T_select
         if use_rag:
-            inner = RAGDocumentWorker(docs, contract, llm, top_k=6, temperature=t_gen)
+            inner = RAGDocumentWorker(docs, contract, llm, top_k=6, temperature=t_gen,
+                                      retriever=c["retriever"])
+            retrieval = dict(inner.retrieval_info)
             warnings.append("Large input: retrieval (RAG) mode. Each step reads only the "
                             "top passages for a generated search query.")
+            if retrieval.get("note"):  # a fallback or a lexical-only dense side is stated, never hidden
+                warnings.append("Retrieval: " + str(retrieval["note"]))
         else:
             inner = LLMDocumentWorker(docs, contract, llm, temperature=t_gen)
         judge = LLMJudge(llm, inner, temperature=t_sel)
@@ -395,10 +411,12 @@ def run_task(req: Dict[str, Any], time_limit: Optional[float] = None,
     djudge = _DeadlineJudge(judge, deadline)
     runner = Runner(cfg=cfg, judge=djudge,
                     max_checkpoints=max_ck, harvest_receipts=harvest)
-    res = runner.run(contract, WorkerAdapter(worker, trace), ledger, trace,
-                     process_check=process_check)
+    adapter = WorkerAdapter(worker, trace)
+    res = runner.run(contract, adapter, ledger, trace, process_check=process_check)
     out = _serialize(c, mode, contract, ledger, trace, inner, res, cfg, warnings,
                      time.time() - started, len(docs), total_chars)
+    out["retrieval"] = retrieval            # which search method actually ran (run record, Sec 14.7)
+    out["lease_violations"] = adapter.violations  # actions outside the lease's allowed classes (Sec 7.2)
     na = getattr(judge, "na", set())
     for e in out["evidence"]:
         if e["obligation_id"] in na:   # the judge's verdict at the last checkpoint
@@ -426,7 +444,8 @@ def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,
             "n": len(steps) + 1, "intent": e.detail.get("intent", ""),
             "query": e.action_text, "chunks": e.chunk_ids, "new_chunks": new,
             "tokens": round(e.cost.get("tokens", 0.0)), "seconds": round(e.cost.get("wall_clock", 0.0), 2),
-            "status": e.status, "blocker": e.detail.get("blocker", ""),
+            "status": e.status, "action_class": e.detail.get("action_class", ""),
+            "blocker": e.detail.get("blocker", ""),
             "contradiction": bool(e.detail.get("contradiction")),
             "dropped": int(e.detail.get("dropped_citations", 0))})
     checkpoints = [{
@@ -435,7 +454,12 @@ def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,
         "note": r.note, "controller_tokens": round(r.controller_cost.get("tokens", 0.0)),
         "remaining": {k: round(v, 1) for k, v in r.remaining_budget.items()},
         "after_steps": sum(1 for e in trace.events[:r.trace_len] if e.action_class == "WORK"),
-        "blocked_condition": r.blocked_condition} for r in res.records]
+        "blocked_condition": r.blocked_condition,
+        # Sec 14.3: the two progress quantities, reported separately; Sec 6.1 / 5.6: the lease
+        # that ran, how its structured progress test came out, and the lease this decision issued.
+        "eff_support": round(r.eff_support, 4), "eff_resolve": round(r.eff_resolve, 4),
+        "lease": r.lease, "lease_progress": r.lease_progress,
+        "next_lease": r.next_lease} for r in res.records]
 
     spans = getattr(worker, "evidence", {})
     evidence = []
@@ -461,10 +485,12 @@ def _serialize(c, mode, contract, ledger, trace, worker, res, cfg, warnings,
         "model": c["model"] if c["provider"] != "offline" else "",
         "decision": res.decision, "draft": res.draft,
         "final_gates": final_gates, "reasons": reasons,
-        "blocked_condition": last.blocked_condition if last else "",
+        "blocked_condition": getattr(res, "blocked_condition", "") or (last.blocked_condition if last else ""),
         "checkpoints": checkpoints, "steps": steps, "evidence": evidence,
         "contract": {"goal": contract.goal, "provenance": contract.provenance,
-                     "contract_id": contract.contract_id, "conduct_rules": contract.conduct_rules,
+                     "contract_id": contract.contract_id, "content_hash": contract.content_hash(),
+                     "conduct_rules": contract.conduct_rules, "blockers": contract.blockers,
+                     "clarification_triggers": getattr(contract, "clarification_triggers", []),
                      "duties": [d.description for d in contract.process_duties],
                      "obligations": [o.proposition for o in contract.evidence_obligations]},
         "docs": {"count": n_docs, "chars": total_chars,

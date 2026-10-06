@@ -266,7 +266,9 @@
             <dt><code>process_duties</code> (H_proc)</dt><dd>Hard duties, checked by code (never by the AI). Each is an object with a <code>check</code>: <code>{"check":"use_every_document"}</code>, <code>{"check":"cite_document","document":"name.pdf"}</code> or <code>{"check":"min_distinct_sources","n":2}</code>. Free text is rejected because nothing could verify it.</dd>
             <dt><code>evidence_obligations</code> (H_evid)</dt><dd>What must be proven: strings, or objects like <code>{"proposition":"...","required_receipts":2}</code> (needs that many distinct supporting quotes). Required unless you give duties.</dd>
             <dt><code>soft_prefs</code> (S_soft)</dt><dd>Preferences such as <code>{"style":"concise"}</code>. Shown to the AI; not enforced.</dd>
-            <dt><code>blockers</code> (B_mat)</dt><dd>Conditions that make the task impossible, e.g. <code>["the pricing table is missing"]</code>. The judge watches for them (a model judgement, not a code check).</dd>
+            <dt><code>blockers</code> (B_mat)</dt><dd>Access-style conditions that make the task impossible, e.g. <code>["the page requires a login"]</code>. The judge reports one only if a supplied document shows it; a reported blocker closes the gate (a model judgement, not a code check).</dd>
+            <dt><code>clarification_triggers</code></dt><dd>Questions only <i>you</i> can answer, e.g. <code>["Which region does the user live in?"]</code>. They can end the run with &ldquo;Ask the user&rdquo; while requirements are still unproven; they never close the gate by themselves.</dd>
+            <dt><code>conduct_rules</code></dt><dd>Rules the answer must follow that no code can check, e.g. <code>["no medical claims"]</code>. Shown to the AI and the judge, and reported as not machine-checked.</dd>
             <dt><code>answer_schema</code> (A_schema)</dt><dd>The required answer form, e.g. <code>{"format":"one sentence, then [source]"}</code>.</dd>
             <dt><code>budget_policy</code> (B_policy)</dt><dd><code>{"max_tool_calls":8,"max_tokens":40000,"max_seconds":40}</code> set this run's limits (capped by the server). Other keys are recorded only.</dd>
           </dl></details>
@@ -275,6 +277,8 @@
         <div class="t-row">
           <div class="t-field"><label for="t-depth">DEPTH</label><select id="t-depth"><option value="standard" selected>Standard (up to 14 steps)</option><option value="quick">Quick (up to 8 steps)</option></select></div>
           <div class="t-field"><label for="t-mode">HOW THE AI READS</label><select id="t-mode"><option value="auto" selected>Auto (whole document if small, else retrieval)</option><option value="full">Whole documents in the prompt</option><option value="rag">Retrieval (RAG): top passages only</option></select></div>
+          <div class="t-field"><label for="t-retriever">SEARCH METHOD (retrieval mode)</label><select id="t-retriever"><option value="auto" selected>Auto (keyword + embeddings if a real embedding model is installed, else keyword)</option><option value="bm25">Keyword search only (BM25)</option><option value="hybrid">Hybrid: keyword + vectors</option></select>
+            <p class="t-note">Embeddings need the optional <code>fastembed</code> package on the machine that runs the server (<code>pip install ".[embed]"</code>). Without it, hybrid uses a word-shape hash that tolerates typos and word forms but does <b>not</b> understand synonyms, and the result says so.</p></div>
         </div></details>
     </div>
 
@@ -295,7 +299,9 @@
       <dt>Stall</dt><dd>The worker keeps searching nearly the same thing and finds no new passages. That triggers a checkpoint; it does <i>not</i> mean the answer is done.</dd>
       <dt>Continue / Verify / Redirect</dt><dd>The controller’s options when the answer is not ready: keep going; double-check a weak or disputed claim; or change approach because the current direction stopped paying off.</dd>
       <dt>Approved vs. stopped</dt><dd>“Approved” means every gate passed. “Stopped” means the limits were hit first, and the draft is shown clearly marked as unapproved.</dd>
-      <dt>RAG mode</dt><dd>For big inputs the AI does not read everything at once. It writes a search query, a keyword search returns the best passages, and it reads only those.</dd>
+      <dt>RAG mode</dt><dd>For big inputs the AI does not read everything at once. It writes a search query, the search (keywords, or keywords plus embeddings in hybrid mode) returns the best passages, and it reads only those.</dd>
+      <dt>Eff_support / Eff_resolve</dt><dd>Two separate progress numbers shown at each checkpoint: how many requirements moved closer to SUPPORTED since the last check, and how many contradictions were cleared. Repeated or irrelevant searching adds nothing to either.</dd>
+      <dt>Lease progress test</dt><dd>Each lease says what it is for. At the next checkpoint the controller checks whether at least one of those targets really moved. It is recorded in the audit; it never approves an answer by itself.</dd>
       <dt>Offline mode</dt><dd>No AI at all: keyword search plus simple rules. It exists only to show the controller’s behavior on your text.</dd>
     </dl>
   </details>

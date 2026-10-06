@@ -1,7 +1,11 @@
 {
   "goal": "Choose the stronger architecture and justify the decision",
-  "process_duties": ["Inspect all three supplied designs", "Review their diagrams"],
+  "process_duties": [
+    {"duty_id": "inspect-all", "check": "use_every_document", "description": "Inspect all three supplied designs"}
+  ],
+  "conduct_rules": ["Review their diagrams (not machine-checked: no code can verify this)"],
   "evidence_obligations": ["Support every decisive comparison with document evidence"],
+  "blockers": ["One of the three supplied designs is missing, empty or unreadable"],
   "answer_schema": {"fields": ["decision", "rationale", "limitations", "next_action"]},
   "budget_policy": {"note": "Controller may spend more near finalization or contradiction"}
 }

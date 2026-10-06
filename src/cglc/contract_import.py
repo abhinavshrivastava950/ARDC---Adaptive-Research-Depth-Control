@@ -6,21 +6,34 @@ import is an explicit, documented mapping and never pretends more than it does:
   goal                  -> goal
   evidence_obligations  -> evidence obligations ("Quoted evidence for: ...");
                            wording that is conditional ("when relevant", "if visible")
-                           becomes a conditional obligation the judge may mark not applicable
+                           becomes a conditional obligation the judge may mark not applicable;
+                           "... for each hard requirement" is expanded to name the obligations
+                           it covers (the provable constraints below) instead of staying vague
   hard_task_constraints -> constraints of the form "must show / be / address / use /
                            distinguish ..." become evidence obligations (each needs a quote);
                            everything else ("must not ...", "must avoid ...", "must remain ...")
                            becomes a conduct rule
   process_duties        -> conduct rules (no code can verify "browse only" for a document run)
   soft_preferences      -> soft_prefs (shown to the worker, not enforced)
-  blockers              -> blockers (watched by the judge)
+  blockers              -> two kinds, told apart by their wording:
+                             "Ask if ..." (no "stop")  -> clarification_triggers: information
+                               only the user can supply; the judge reports it through
+                               `needs_user` (ASK_USER), it never closes the gate by itself
+                             anything else ("Ask or stop if the site requires login ...")
+                               -> blockers: access-style conditions that close the gate when
+                               the supplied documents show them
+                           Nothing is dropped; to_dict() lists both kinds.
   answer_schema (text)  -> answer_schema {"format": text}
-  budget_policy         -> runtime_budget_caps become max_* limits (the server still caps them);
+  budget_policy         -> runtime_budget_caps become max_* limits (the server still caps them;
+                           controller_calls is kept as max_controller_calls, not enforced);
                            structural_stall_parameters and lease_action_caps are applied to the
-                           controller; other keys are recorded only
-  provenance (object)   -> a provenance string that says the source is *claimed* by the input
+                           controller; policy_version, configuration_note, checkpoint_triggers and
+                           requires_runtime_configuration are recorded only
+  provenance (object)   -> a provenance string that says the source is *claimed* by the input;
+  revision_id           -> recorded there too ("not verified": the digest scheme is the input's)
 
-Conduct rules are shown to the worker and the judge and reported as NOT machine-checked.
+The 'page' / 'site' / 'visible' wording of web contracts is read against the supplied documents by
+the judge prompt (judge.py), not rewritten here. Conduct rules are shown to the worker and the judge and reported as NOT machine-checked.
 Unknown fields, wrong types or an unknown schema value are rejected with a message.
 """
 from __future__ import annotations
@@ -46,6 +59,13 @@ RUNTIME_CAPS = {"worker_actions": "max_tool_calls", "controller_calls": None,
 # "must show/be/address/use/distinguish ..." constraints are provable by a quote
 _CONTENT = re.compile(r"^must (show|be|address|use|distinguish)\b", re.I)
 _CONDITIONAL = re.compile(r"\b(when relevant|if visible|if relevant|where relevant)\b", re.I)
+# "Ask if ..." asks the user; "Ask or stop if ..." / "Stop if ..." halts the task (B_mat, access)
+_ASK = re.compile(r"^\s*ask\b", re.I)
+_HALT = re.compile(r"\b(stop|halt|abort|refuse|cannot (?:continue|proceed))\b", re.I)
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+# a meta-obligation such as "visible evidence for each hard requirement"
+_EACH_REQUIREMENT = re.compile(
+    r"\b(each|every|all)\b[^.;]*\bhard (?:task )?(?:requirement|constraint)s?\b", re.I)
 
 
 def from_cglc_v1(d: Dict[str, Any]) -> TaskContract:
@@ -90,7 +110,9 @@ def from_cglc_v1(d: Dict[str, Any]) -> TaskContract:
     duties = strings("process_duties", 10, 300)
     constraints = strings("hard_task_constraints", 12, 300)
     evid = strings("evidence_obligations", 8, 300)
-    blockers = strings("blockers", 10, 300)
+    declared = strings("blockers", 10, 300)
+    clarifications = [b for b in declared if _ASK.match(b) and not _HALT.search(b)]
+    blockers = [b for b in declared if b not in clarifications]
     ans = d.get("answer_schema", "")
     if ans != "" and (not isinstance(ans, str) or len(ans) > 600):
         raise ValueError(f"answer_schema must be text of at most 600 characters, but got {_kind(ans)}")
@@ -106,6 +128,7 @@ def from_cglc_v1(d: Dict[str, Any]) -> TaskContract:
 
     for t in evid:
         add(f"Quoted evidence for: {t}", bool(_CONDITIONAL.search(t)))
+    n_generic = len(obligations)
     conduct: List[str] = list(duties)
     for t in constraints:
         if _CONTENT.match(t):
@@ -113,6 +136,15 @@ def from_cglc_v1(d: Dict[str, Any]) -> TaskContract:
                 bool(_CONDITIONAL.search(t)))
         else:
             conduct.append(t)
+    # "visible evidence for each hard requirement" would otherwise refer to nothing the judge can
+    # see; name the obligations it covers (the provable constraints) so it is not a vague duplicate.
+    provable = [o.obligation_id for o in obligations[n_generic:]]
+    if provable:
+        for i, t in enumerate(evid):
+            if _EACH_REQUIREMENT.search(t):
+                obligations[i].proposition = (
+                    f"Quoted evidence for: {t} (the hard requirements are obligations "
+                    f"{', '.join(provable)}; each one needs its own quote)")[:400]
     if len(obligations) > 8:
         raise ValueError("this contract maps to more than 8 evidence obligations (the limit)")
     if not obligations:
@@ -136,18 +168,40 @@ def from_cglc_v1(d: Dict[str, Any]) -> TaskContract:
     for k in ("lease_action_caps", "structural_stall_parameters"):
         if k in bp:
             native[k] = bp[k]
+    if caps.get("controller_calls") is not None:
+        native["max_controller_calls"] = caps["controller_calls"]  # recorded only
     for k in ("policy_version", "configuration_note"):
         if k in bp:
             native[k] = text(bp[k], f"budget_policy.{k}", 400)
+    if "checkpoint_triggers" in bp:  # recorded; the guard plane already fires on all of these (Sec 5.1)
+        ct = bp["checkpoint_triggers"]
+        if not isinstance(ct, list) or len(ct) > 12:
+            raise ValueError("budget_policy.checkpoint_triggers must be a list of at most 12 strings")
+        native["checkpoint_triggers"] = [text(x, f"budget_policy.checkpoint_triggers[{i}]", 200)
+                                         for i, x in enumerate(ct)]
+    if "requires_runtime_configuration" in bp:
+        if not isinstance(bp["requires_runtime_configuration"], bool):
+            raise ValueError("budget_policy.requires_runtime_configuration must be true or false")
+        native["requires_runtime_configuration"] = bp["requires_runtime_configuration"]
     validate_controller_settings(native)
 
     # ---- provenance: a claim made by the input, labelled as such ---------------------------------------
     prov = small_obj("provenance")
-    claimed = ", ".join(f"{k}={prov[k]}" for k in ("dataset", "task_id") if isinstance(prov.get(k), str))
+
+    def short(v: str, n: int = 60) -> str:
+        v = " ".join(v.split())
+        return v if len(v) <= n else v[:n - 3] + "..."
+
+    claimed = ", ".join(f"{k}={short(prov[k])}" for k in ("dataset", "task_id") if isinstance(prov.get(k), str))
     rid = d.get("revision_id")
+    if rid is not None and not isinstance(rid, str):
+        raise ValueError(f"revision_id must be a string, but got {_kind(rid)}")
+    # the digest scheme of the input is unknown, so it can only be recorded, never checked
+    rid_note = ("" if rid is None else
+                f"; revision_id {short(rid, 30)}, "
+                + ("" if _DIGEST.match(rid) else "not a sha256 digest, ") + "not verified")
     provenance = (f"user-supplied ({SCHEMA} import; source claimed by the input"
-                  + (f": {claimed}" if claimed else "")
-                  + (f"; revision_id {str(rid)[:24]}, not verified" if isinstance(rid, str) else "") + ")")
+                  + (f": {claimed}" if claimed else "") + rid_note + ")")
 
     cid = d.get("contract_id")
     if cid is not None and (not isinstance(cid, str) or not _ID.match(cid)):
@@ -156,7 +210,7 @@ def from_cglc_v1(d: Dict[str, Any]) -> TaskContract:
     c = TaskContract.create(
         goal, evidence_obligations=[], soft_prefs=soft, blockers=blockers,
         answer_schema={"format": ans} if ans else {}, budget_policy=native,
-        provenance=provenance, conduct_rules=conduct)
+        provenance=provenance, conduct_rules=conduct, clarification_triggers=clarifications)
     c.evidence_obligations = obligations
     if cid:
         c.contract_id = cid

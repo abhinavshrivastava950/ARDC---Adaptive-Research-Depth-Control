@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Set
 
+from ..leases import SEARCH
 from ..retrieval import BM25Index
 from .base import DocumentWorker, Observation, WorkerResult
 from .llm_worker import EvidenceSpan
@@ -25,6 +26,7 @@ class ExtractiveWorker(DocumentWorker):
 
     def act(self, intent: str, target_gaps: List[str],
             allowed_classes: List[str], draft: str) -> WorkerResult:
+        self.allowed_classes = list(allowed_classes or [])
         exclude = self.seen if intent == "REDIRECT" else ()
         hits = self.index.search(self.query, self.top_k, exclude)
         fresh = [h for h in hits if h.chunk_id not in self.seen]  # don't repeat text in the draft
@@ -43,5 +45,7 @@ class ExtractiveWorker(DocumentWorker):
         return WorkerResult(
             observations=obs, draft=merged[:6000],
             detail={"action_text": self.query,
+                    # BM25 keyword retrieval: the only class this worker has.
+                    "action_class": SEARCH,
                     "cost": {} if obs else {"tool_calls": 1.0, "tokens": 0.0,
                                             "wall_clock": 0.05}})

@@ -1,0 +1,852 @@
+[
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-01037",
+    "revision_id": "sha256:d35446089d1066bd74f8883f28f6fe3ae0c50c4915fcd1af99156d4cf22b66c1",
+    "goal": "On Sephora, verify whether the site has evidence for upscale fragrance-adjacent shampoo or hair-care with visible brand evidence. State whether the condition is supported, unsupported, or unclear from visible evidence. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must be shampoo/hair-care",
+      "must show brand/product category evidence",
+      "must not assume a named brand carries shampoo unless verified",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-01037",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-01043",
+    "revision_id": "sha256:3bc4d2353b08c484a39babbea0b6e47a5d4c04ac7e561071771f0fe5f3a4185a",
+    "goal": "On Sephora, find public page evidence for a gentle fragrance-free cleanser for sensitive skin. Give a concise answer with the page evidence you checked. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must be facial cleanser",
+      "must show fragrance-free/sensitive evidence",
+      "must avoid medical claims",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-01043",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-01049",
+    "revision_id": "sha256:1a31c00926748cff8b16cbc5e33f6c5d3eff36145e7b760e1edffca9a5882303",
+    "goal": "On Sephora, choose one defensible candidate for a sunscreen that works under makeup with SPF evidence. Return one recommended option and a fallback if the evidence is incomplete. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must be sunscreen",
+      "must show SPF/broad-spectrum evidence",
+      "must be face-appropriate",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-01049",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-02397",
+    "revision_id": "sha256:123a57a84981521608f0f7cf53bce3569b3e291751990175daa3a22518ee30b3",
+    "goal": "On MDN Web Docs, make a short browsing-based plan for official documentation for CSS container queries with a minimal example. Return a brief plan or shortlist with evidence-backed next steps. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must use MDN documentation",
+      "must show syntax/example evidence",
+      "must show browser compatibility evidence if visible",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-02397",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-02403",
+    "revision_id": "sha256:d61552674d22ffd75a5f6511ac733886f7078a55eaf4ab97f710567f938231e4",
+    "goal": "On MDN Web Docs, compare at least two viable options or sources for JavaScript fetch error handling behavior. Recommend the better fit and explain trade-offs using visible evidence. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must use MDN documentation",
+      "must show fetch/error handling evidence",
+      "must show example or API details",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-02403",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-02409",
+    "revision_id": "sha256:08b0f095634c6c835afdbbb36129d53c102d1176238c9843bd28affec0062e58",
+    "goal": "On MDN Web Docs, diagnose or locate a likely solution for ARIA labels and accessible-name examples. Return the likely answer or next step, with the source evidence and uncertainty. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must use MDN documentation",
+      "must show ARIA/accessibility evidence",
+      "must show example usage",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-02409",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-00697",
+    "revision_id": "sha256:89d9dc723aeace09f8ab185b9df0487be9b2820731d89b346231af0dc173c844",
+    "goal": "On Apple, diagnose or locate a likely solution for official adapter options for connecting a recent MacBook to an external HDMI display. Return the likely answer or next step, with the source evidence and uncertainty. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must be Apple product/support page or official accessory",
+      "must address HDMI display connection",
+      "must show compatibility evidence",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-00697",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-00703",
+    "revision_id": "sha256:0402db64baec9328d8decb2b3230c7c231e55c5da6558e80e85254036cc97b7d",
+    "goal": "On Apple, make a short browsing-based plan for Mac mini display support and whether USB-C or Thunderbolt is relevant. Return a brief plan or shortlist with evidence-backed next steps. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must be Apple Mac mini support/spec evidence",
+      "must address display connection",
+      "must distinguish USB-C/Thunderbolt evidence",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-00703",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-00709",
+    "revision_id": "sha256:9010c1465ec8e4c885774668ba285a6ca4bfc95dd68aee7f6bc04f82f6163423",
+    "goal": "On Apple, compare at least two viable options or sources for iPad keyboard case options with trackpad support. Recommend the better fit and explain trade-offs using visible evidence. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must be iPad keyboard/case/accessory",
+      "must show trackpad support",
+      "must show model compatibility",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-00709",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  },
+  {
+    "contract_schema": "cglc-contract-v1",
+    "contract_id": "rbc4-00001",
+    "revision_id": "sha256:5fcb77bcae9f41a50afb77775cb26409444f3f9a4a11d74b5ca6183a57944f1e",
+    "goal": "On Amazon, compare at least two viable options or sources for blackout curtains for a wide rental-apartment window where drilling is not ideal and odor matters. Recommend the better fit and explain trade-offs using visible evidence. Note any missing information that could materially change the answer.",
+    "process_duties": [
+      "Browse only. Do not log in, purchase, book, message, submit private forms, enter credentials, or collect personal data."
+    ],
+    "hard_task_constraints": [
+      "must be a blackout curtain or window treatment",
+      "must address wide-window coverage",
+      "must show no-drill or renter-friendly installation evidence",
+      "must remain within public, non-logged-in browsing",
+      "must not purchase, book, message, submit private forms, or enter credentials"
+    ],
+    "evidence_obligations": [
+      "target page title/name",
+      "visible source or listing evidence",
+      "visible evidence for each hard requirement",
+      "visible caveat, rating, date, version, or availability evidence when relevant"
+    ],
+    "soft_preferences": {
+      "persona_id": "explicit_constraint_control",
+      "persona_name": "Explicit-constraint control",
+      "principle": "Follow only explicit task constraints; avoid latent persona-driven preferences.",
+      "behavior": "Use a neutral tie-break and minimal clarification unless a hard constraint is impossible to verify.",
+      "policy_vector": {
+        "cost": 0.5,
+        "trust": 0.5,
+        "speed": 0.5,
+        "evidence": 0.5,
+        "clarify": 0.5,
+        "explore": 0.5,
+        "privacy": 0.5,
+        "accessibility": 0.5,
+        "locality": 0.5,
+        "diversity": 0.5
+      },
+      "prompt_rules": [
+        "Do not invent hidden preferences.",
+        "Satisfy explicit constraints first.",
+        "Use neutral ranking if several candidates tie."
+      ]
+    },
+    "blockers": [
+      "Ask if a missing location, date, size, budget, model, dietary need, or compatibility fact would materially change the recommendation.",
+      "Ask or stop if the site requires login, checkout, booking, messaging, private data, or unavailable page access."
+    ],
+    "answer_schema": "short answer; 1-3 candidate(s) or source(s); evidence bullets; caveats/missing material info; no irreversible action",
+    "budget_policy": {
+      "policy_version": "cglc-v1-initial-test-high-budget",
+      "lease_action_caps": {
+        "SHORT": 1,
+        "STANDARD": 3,
+        "EXTENDED": 5
+      },
+      "checkpoint_triggers": [
+        "worker requests finalization",
+        "lease expires",
+        "configured budget tier is crossed",
+        "material blocker or contradiction appears",
+        "structural stall trigger fires",
+        "configured maximum-silence limit is reached"
+      ],
+      "structural_stall_parameters": {
+        "jaccard_threshold": 0.6,
+        "unique_passage_rate_threshold": 0.2,
+        "consecutive_rounds": 2
+      },
+      "runtime_budget_caps": {
+        "worker_actions": 1000000,
+        "controller_calls": 100000,
+        "total_tokens": 100000000,
+        "runtime_seconds": 86400
+      },
+      "requires_runtime_configuration": false,
+      "configuration_note": "Initial test settings requested by the user: tau_J=0.6, tau_U=0.2, p=2 rounds, plus high run-level caps. These are experiment settings, not values supplied by the WebRider task records. Per-lease action caps remain SHORT=1, STANDARD=3, EXTENDED=5."
+    },
+    "provenance": {
+      "dataset": "WebRider/WebRider",
+      "task_id": "rbc4-00001",
+      "source_schema": "riderbench_v4_contract",
+      "metadata_file": "tasks.json"
+    }
+  }
+]
